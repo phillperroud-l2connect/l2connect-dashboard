@@ -19,25 +19,32 @@ export function LoginForm({ authError }: { authError?: string }) {
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (signInError) {
+      if (signInError) {
+        setError(
+          signInError.message === "Invalid login credentials"
+            ? "E-mail ou senha inválidos."
+            : signInError.message
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Hard redirect: força full page reload para que o cookie de sessão
+      // seja incluído na próxima requisição ao servidor (middleware).
+      window.location.href = "/dashboard";
+    } catch (err) {
       setError(
-        signInError.message === "Invalid login credentials"
-          ? "E-mail ou senha inválidos."
-          : signInError.message
+        `Erro de conexão: ${err instanceof Error ? err.message : "Tente novamente."}`
       );
       setLoading(false);
-      return;
     }
-
-    // Hard redirect: força full page reload para que o cookie de sessão
-    // seja enviado ao servidor antes de o middleware verificar a autenticação.
-    window.location.href = "/dashboard";
   }
 
   return (
