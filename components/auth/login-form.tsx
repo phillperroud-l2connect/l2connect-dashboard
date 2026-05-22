@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function LoginForm({ authError }: { authError?: string }) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,8 +35,9 @@ export function LoginForm({ authError }: { authError?: string }) {
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    // Hard redirect: força full page reload para que o cookie de sessão
+    // seja enviado ao servidor antes de o middleware verificar a autenticação.
+    window.location.href = "/dashboard";
   }
 
   return (
