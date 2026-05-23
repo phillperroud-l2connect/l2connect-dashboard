@@ -14,7 +14,6 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import {
   formatCurrency,
   formatCurrencyARS,
-
   formatDate,
   toInputDate,
 } from "@/lib/format";
@@ -54,8 +53,23 @@ function parcelaBadge(status: ParcelaStatus) {
 }
 
 function formatValor(valor: number, moeda: Moeda) {
-  if (moeda === "ARS") return formatCurrencyARS(valor);
-  return formatCurrency(valor);
+  return moeda === "ARS" ? formatCurrencyARS(valor) : formatCurrency(valor);
+}
+
+function MoedaTag({ moeda }: { moeda: string }) {
+  return (
+    <span
+      className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+      style={{
+        background:
+          moeda === "ARS" ? "rgba(255,179,0,0.15)" : "rgba(0,180,255,0.12)",
+        color: moeda === "ARS" ? "#ffb300" : "#00b4ff",
+        border: `1px solid ${moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
+      }}
+    >
+      {moeda}
+    </span>
+  );
 }
 
 const selectCls =
@@ -168,7 +182,7 @@ export function PagamentosManager() {
     setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="Pagamentos"
         description="Controle de cobranças com parcelas e moedas."
@@ -233,7 +247,13 @@ export function PagamentosManager() {
                 </div>
 
                 {/* Parcela 1 */}
-                <div className="space-y-3 rounded-lg border p-3" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+                <div
+                  className="space-y-3 rounded-lg border p-3"
+                  style={{
+                    borderColor: "rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.03)",
+                  }}
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Parcela 1
                   </p>
@@ -294,7 +314,13 @@ export function PagamentosManager() {
 
                 {/* Parcela 2 */}
                 {form.tem_parcela2 && (
-                  <div className="space-y-3 rounded-lg border p-3" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+                  <div
+                    className="space-y-3 rounded-lg border p-3"
+                    style={{
+                      borderColor: "rgba(255,255,255,0.08)",
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Parcela 2
                     </p>
@@ -338,7 +364,6 @@ export function PagamentosManager() {
                   </div>
                 )}
 
-
                 <div className="flex justify-end gap-2 pt-1">
                   <Button
                     type="button"
@@ -374,98 +399,212 @@ export function PagamentosManager() {
       ) : pagamentos.length === 0 ? (
         <EmptyState message="Nenhum pagamento cadastrado." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
-                <th className="px-4 py-3 font-medium">Cliente</th>
-                <th className="px-4 py-3 font-medium">Moeda</th>
-                <th className="px-4 py-3 font-medium">Descrição</th>
-                <th className="px-4 py-3 font-medium">Parcela 1</th>
-                <th className="px-4 py-3 font-medium">Parcela 2</th>
-                <th className="px-4 py-3 font-medium text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagamentos.map((p, i) => (
-                <tr key={p.id} className="border-b last:border-0 transition-colors hover:bg-white/3" style={{ borderColor: "rgba(255,255,255,0.06)", background: i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined }}>
-                  <td className="px-4 py-3 font-medium">{p.clientes?.nome ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                      style={{
-                        background: p.moeda === "ARS" ? "rgba(255,179,0,0.15)" : "rgba(0,180,255,0.12)",
-                        color: p.moeda === "ARS" ? "#ffb300" : "#00b4ff",
-                        border: `1px solid ${p.moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
-                      }}
+        <>
+          {/* ── Mobile: card por pagamento ── */}
+          <ul className="space-y-2 md:hidden">
+            {pagamentos.map((p) => (
+              <li
+                key={p.id}
+                className="rounded-xl border px-4 py-3"
+                style={{
+                  borderColor: "rgba(255,255,255,0.08)",
+                  background: "rgba(255,255,255,0.02)",
+                }}
+              >
+                {/* Header: nome + moeda + ações */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-semibold leading-tight">
+                        {p.clientes?.nome ?? "—"}
+                      </p>
+                      <MoedaTag moeda={p.moeda} />
+                    </div>
+                    {p.descricao && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {p.descricao}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => openEdit(p)}
+                      aria-label="Editar"
                     >
-                      {p.moeda}
+                      <Pencil />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleDelete(p.id)}
+                      aria-label="Excluir"
+                    >
+                      <Trash2 className="text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Parcelas */}
+                <div
+                  className="mt-2 space-y-1.5 border-t pt-2"
+                  style={{ borderColor: "rgba(255,255,255,0.07)" }}
+                >
+                  {/* Parcela 1 */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      Parcela 1
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {p.descricao ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium">
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(p.data_parcela1)}
+                      </span>
+                      <Badge variant={parcelaBadge(p.status_parcela1)}>
+                        {p.status_parcela1}
+                      </Badge>
+                      <span className="font-semibold">
                         {formatValor(Number(p.valor_parcela1), p.moeda)}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={parcelaBadge(p.status_parcela1)}>
-                          {p.status_parcela1}
-                        </Badge>
+                    </div>
+                  </div>
+
+                  {/* Parcela 2 */}
+                  {p.valor_parcela2 != null && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        Parcela 2
+                      </span>
+                      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                         <span className="text-xs text-muted-foreground">
-                          {formatDate(p.data_parcela1)}
+                          {formatDate(p.data_parcela2)}
+                        </span>
+                        <Badge
+                          variant={parcelaBadge(p.status_parcela2 ?? "pendente")}
+                        >
+                          {p.status_parcela2 ?? "pendente"}
+                        </Badge>
+                        <span className="font-semibold">
+                          {formatValor(Number(p.valor_parcela2), p.moeda)}
                         </span>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.valor_parcela2 != null ? (
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* ── Desktop: tabela ── */}
+          <div
+            className="hidden overflow-x-auto rounded-xl border md:block"
+            style={{ borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr
+                  className="border-b text-left text-muted-foreground"
+                  style={{
+                    borderColor: "rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.03)",
+                  }}
+                >
+                  <th className="px-4 py-3 font-medium">Cliente</th>
+                  <th className="px-4 py-3 font-medium">Moeda</th>
+                  <th className="px-4 py-3 font-medium">Descrição</th>
+                  <th className="px-4 py-3 font-medium">Parcela 1</th>
+                  <th className="px-4 py-3 font-medium">Parcela 2</th>
+                  <th className="px-4 py-3 font-medium text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagamentos.map((p, i) => (
+                  <tr
+                    key={p.id}
+                    className="border-b last:border-0 transition-colors hover:bg-white/3"
+                    style={{
+                      borderColor: "rgba(255,255,255,0.06)",
+                      background:
+                        i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined,
+                    }}
+                  >
+                    <td className="max-w-[160px] px-4 py-3 font-medium">
+                      <p className="truncate">{p.clientes?.nome ?? "—"}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <MoedaTag moeda={p.moeda} />
+                    </td>
+                    <td className="max-w-[180px] px-4 py-3 text-muted-foreground">
+                      <p className="truncate">{p.descricao ?? "—"}</p>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
                         <span className="font-medium">
-                          {formatValor(Number(p.valor_parcela2), p.moeda)}
+                          {formatValor(Number(p.valor_parcela1), p.moeda)}
                         </span>
                         <div className="flex items-center gap-2">
-                          <Badge variant={parcelaBadge(p.status_parcela2 ?? "pendente")}>
-                            {p.status_parcela2 ?? "pendente"}
+                          <Badge variant={parcelaBadge(p.status_parcela1)}>
+                            {p.status_parcela1}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
-                            {formatDate(p.data_parcela2)}
+                            {formatDate(p.data_parcela1)}
                           </span>
                         </div>
                       </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => openEdit(p)}
-                        aria-label="Editar"
-                      >
-                        <Pencil />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => handleDelete(p.id)}
-                        aria-label="Excluir"
-                      >
-                        <Trash2 className="text-destructive" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.valor_parcela2 != null ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium">
+                            {formatValor(Number(p.valor_parcela2), p.moeda)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={parcelaBadge(
+                                p.status_parcela2 ?? "pendente"
+                              )}
+                            >
+                              {p.status_parcela2 ?? "pendente"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDate(p.data_parcela2)}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => openEdit(p)}
+                          aria-label="Editar"
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => handleDelete(p.id)}
+                          aria-label="Excluir"
+                        >
+                          <Trash2 className="text-destructive" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

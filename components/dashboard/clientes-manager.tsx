@@ -117,7 +117,7 @@ export function ClientesManager() {
   }
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="Clientes"
         description="Cadastro e gestão de clientes."
@@ -129,9 +129,7 @@ export function ClientesManager() {
                 Novo cliente
               </Button>
             </DialogTrigger>
-            <DialogContent
-              title={editing ? "Editar cliente" : "Novo cliente"}
-            >
+            <DialogContent title={editing ? "Editar cliente" : "Novo cliente"}>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="nome">Nome *</Label>
@@ -194,30 +192,75 @@ export function ClientesManager() {
       ) : clientes.length === 0 ? (
         <EmptyState message="Nenhum cliente cadastrado." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-          <table className="w-full min-w-[520px] text-sm">
+        <div
+          className="rounded-xl border"
+          style={{ borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-muted-foreground" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+              <tr
+                className="border-b text-left text-muted-foreground"
+                style={{
+                  borderColor: "rgba(255,255,255,0.08)",
+                  background: "rgba(255,255,255,0.03)",
+                }}
+              >
+                {/* Nome — always visible */}
                 <th className="px-4 py-3 font-medium">Nome</th>
-                <th className="px-4 py-3 font-medium">E-mail</th>
-                <th className="px-4 py-3 font-medium">Telefone</th>
-                <th className="px-4 py-3 font-medium">Cadastro</th>
+                {/* E-mail — desktop only */}
+                <th className="hidden px-4 py-3 font-medium md:table-cell">E-mail</th>
+                {/* Telefone — desktop only */}
+                <th className="hidden px-4 py-3 font-medium md:table-cell">Telefone</th>
+                {/* Cadastro — desktop only */}
+                <th className="hidden px-4 py-3 font-medium md:table-cell">Cadastro</th>
+                {/* Ações — always visible */}
                 <th className="px-4 py-3 font-medium text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {clientes.map((c, i) => (
-                <tr key={c.id} className="border-b last:border-0 transition-colors hover:bg-white/3" style={{ borderColor: "rgba(255,255,255,0.06)", background: i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined }}>
-                  <td className="px-4 py-3 font-medium">{c.nome}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {c.email ?? "—"}
+                <tr
+                  key={c.id}
+                  className="border-b last:border-0 transition-colors hover:bg-white/3"
+                  style={{
+                    borderColor: "rgba(255,255,255,0.06)",
+                    background:
+                      i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined,
+                  }}
+                >
+                  {/* Nome — with sub-info on mobile */}
+                  <td className="max-w-0 px-4 py-3">
+                    <p className="truncate font-medium">{c.nome}</p>
+                    {/* Mobile: show email, telefone and data below nome */}
+                    <div className="mt-1 space-y-0.5 md:hidden">
+                      {c.email && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {c.email}
+                        </p>
+                      )}
+                      {c.telefone && (
+                        <p className="text-xs text-muted-foreground">
+                          {c.telefone}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(c.created_at)}
+                      </p>
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  {/* E-mail — desktop only */}
+                  <td className="hidden max-w-[180px] px-4 py-3 text-muted-foreground md:table-cell">
+                    <p className="truncate">{c.email ?? "—"}</p>
+                  </td>
+                  {/* Telefone — desktop only */}
+                  <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
                     {c.telefone ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  {/* Cadastro — desktop only */}
+                  <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
                     {formatDate(c.created_at)}
                   </td>
+                  {/* Ações — always visible */}
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       <Button
