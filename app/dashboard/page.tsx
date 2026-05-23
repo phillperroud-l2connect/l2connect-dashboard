@@ -2,14 +2,12 @@ import {
   Users,
   CreditCard,
   Receipt,
-  TrendingUp,
   TrendingDown,
-  DollarSign,
   ArrowLeftRight,
   Wallet,
+  RefreshCcw,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { PageHeader } from "@/components/dashboard/page-header";
 import {
   Card,
   CardContent,
@@ -18,235 +16,407 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { PeriodSelector } from "@/components/dashboard/period-selector";
 import { formatCurrency, formatCurrencyARS, formatDate } from "@/lib/format";
 
-type TodoPagamento = {
-  moeda: string;
-  valor_parcela1: number;
-  status_parcela1: string;
-  valor_parcela2: number | null;
-  status_parcela2: string | null;
-};
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-type UltimoPagamento = {
+type PagRow = {
   id: string;
   moeda: string;
   descricao: string | null;
   valor_parcela1: number;
+  data_parcela1: string;
   status_parcela1: string;
   valor_parcela2: number | null;
+  data_parcela2: string | null;
   status_parcela2: string | null;
   created_at: string;
   clientes: { nome: string } | { nome: string }[] | null;
 };
 
+type GastoRow = {
+  id: string;
+  valor: number;
+  moeda: string | null;
+  tipo: string | null;
+  data: string;
+};
+
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+const MONTH_NAMES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+function yyyymmdd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getDateRange(period: string): { start: string; end: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  if (period === "last_30_days") {
+    const end = yyyymmdd(now);
+    const start = yyyymmdd(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+    return { start, end };
+  }
+  if (period === "year") {
+    return { start: `${year}-01-01`, end: `${year}-12-31` };
+  }
+  const match = period.match(/^month_(\d{2})$/);
+  if (match) {
+    const m = parseInt(match[1]) - 1;
+    const start = new Date(year, m, 1);
+    const end = new Date(year, m + 1, 0);
+    return { start: yyyymmdd(start), end: yyyymmdd(end) };
+  }
+  // default: current_month
+  return {
+    start: yyyymmdd(new Date(year, month, 1)),
+    end: yyyymmdd(new Date(year, month + 1, 0)),
+  };
+}
+
+function getPeriodLabel(period: string): string {
+  const year = new Date().getFullYear();
+  if (period === "last_30_days") return "Últimos 30 dias";
+  if (period === "year") return `Ano completo ${year}`;
+  const match = period.match(/^month_(\d{2})$/);
+  if (match) return `${MONTH_NAMES[parseInt(match[1]) - 1]} ${year}`;
+  const m = new Date().getMonth();
+  return `${MONTH_NAMES[m]} ${year}`;
+}
+
+// ─── Rate fetching ───────────────────────────────────────────────────────────
+
 async function fetchArsRate(): Promise<number | null> {
   try {
-    const res = await fetch("https://economia.awesomeapi.com.br/json/last/ARS-BRL", {
+    const res = await fetch("https://open.er-api.com/v6/latest/ARS", {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const bid = parseFloat(data?.ARSBRL?.bid);
-    return isNaN(bid) ? null : bid;
+    const rate = Number(data?.rates?.BRL);
+    return isNaN(rate) || rate === 0 ? null : rate;
   } catch {
     return null;
   }
 }
 
-function sumParcelas(pagamentos: TodoPagamento[], moeda: string): number {
-  return pagamentos
-    .filter((p) => p.moeda === moeda)
-    .reduce((sum, p) => {
-      return (
-        sum + Number(p.valor_parcela1) + (p.valor_parcela2 ? Number(p.valor_parcela2) : 0)
-      );
-    }, 0);
+async function fetchUsdRate(): Promise<number | null> {
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD", {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rate = Number(data?.rates?.BRL);
+    return isNaN(rate) || rate === 0 ? null : rate;
+  } catch {
+    return null;
+  }
 }
 
-function sumParcelasPago(pagamentos: TodoPagamento[], moeda: string): number {
-  return pagamentos
-    .filter((p) => p.moeda === moeda)
-    .reduce((sum, p) => {
-      const p1 = p.status_parcela1 === "pago" ? Number(p.valor_parcela1) : 0;
-      const p2 =
-        p.status_parcela2 === "pago" && p.valor_parcela2 ? Number(p.valor_parcela2) : 0;
-      return sum + p1 + p2;
-    }, 0);
+// ─── Computation helpers ─────────────────────────────────────────────────────
+
+function computeRecebido(
+  pagamentos: PagRow[],
+  moeda: string,
+  range: { start: string; end: string }
+): number {
+  let total = 0;
+  for (const p of pagamentos) {
+    if (p.moeda !== moeda) continue;
+    if (p.status_parcela1 === "pago" && p.data_parcela1 >= range.start && p.data_parcela1 <= range.end) {
+      total += Number(p.valor_parcela1);
+    }
+    if (p.valor_parcela2 != null && p.status_parcela2 === "pago" && p.data_parcela2 && p.data_parcela2 >= range.start && p.data_parcela2 <= range.end) {
+      total += Number(p.valor_parcela2);
+    }
+  }
+  return total;
 }
 
-export default async function DashboardPage() {
+function computePendente(pagamentos: PagRow[], moeda: string): number {
+  let total = 0;
+  for (const p of pagamentos) {
+    if (p.moeda !== moeda) continue;
+    if (p.status_parcela1 === "pendente") total += Number(p.valor_parcela1);
+    if (p.valor_parcela2 != null && p.status_parcela2 === "pendente") total += Number(p.valor_parcela2);
+  }
+  return total;
+}
+
+function ym2n(ym: string): number {
+  const [y, m] = ym.split("-").map(Number);
+  return y * 12 + m;
+}
+
+function countRecurrenteMonths(
+  gastoData: string,
+  period: string,
+  range: { start: string; end: string },
+  now: Date
+): number {
+  if (period === "year") {
+    const gastoN = ym2n(gastoData.slice(0, 7));
+    const startN = ym2n(range.start.slice(0, 7));
+    const endN = ym2n(range.end.slice(0, 7));
+    const nowN = ym2n(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+    const effStart = Math.max(startN, gastoN);
+    const effEnd = Math.min(endN, nowN);
+    return effStart <= effEnd ? effEnd - effStart + 1 : 0;
+  }
+  return gastoData <= range.end ? 1 : 0;
+}
+
+type GastosResult = {
+  totalBRL: number;
+  recorrenteBRL: number;
+  avulsoBRL: number;
+};
+
+function computeGastos(
+  gastos: GastoRow[],
+  period: string,
+  range: { start: string; end: string },
+  usdToBrl: number | null,
+  now: Date
+): GastosResult {
+  let totalBRL = 0;
+  let recorrenteBRL = 0;
+  let avulsoBRL = 0;
+
+  for (const g of gastos) {
+    const moeda = g.moeda ?? "BRL";
+    const tipo = g.tipo ?? "recorrente";
+    const usdFallback = usdToBrl ?? 5.8;
+    const valorBRL = moeda === "USD" ? Number(g.valor) * usdFallback : Number(g.valor);
+
+    if (tipo === "recorrente") {
+      const count = countRecurrenteMonths(g.data, period, range, now);
+      const contribution = valorBRL * count;
+      totalBRL += contribution;
+      recorrenteBRL += contribution;
+    } else {
+      if (g.data >= range.start && g.data <= range.end) {
+        totalBRL += valorBRL;
+        avulsoBRL += valorBRL;
+      }
+    }
+  }
+
+  return { totalBRL, recorrenteBRL, avulsoBRL };
+}
+
+function clienteNome(p: PagRow): string {
+  const c = p.clientes;
+  if (!c) return "Cliente";
+  if (Array.isArray(c)) return c[0]?.nome ?? "Cliente";
+  return c.nome;
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const { period = "current_month" } = await searchParams;
+  const range = getDateRange(period);
+  const periodLabel = getPeriodLabel(period);
+  const now = new Date();
+
   const supabase = await createClient();
 
   const [
     { count: clientesCount },
-    { data: todosPagamentos },
-    { data: ultimosPagamentos },
-    { data: gastos },
+    { data: pagamentosRaw },
+    { data: gastosRaw },
     arsRate,
+    usdRate,
   ] = await Promise.all([
     supabase.from("clientes").select("*", { count: "exact", head: true }),
     supabase
       .from("pagamentos")
-      .select("moeda, valor_parcela1, status_parcela1, valor_parcela2, status_parcela2"),
-    supabase
-      .from("pagamentos")
       .select(
-        "id, moeda, descricao, valor_parcela1, status_parcela1, valor_parcela2, status_parcela2, created_at, clientes(nome)"
+        "id, moeda, descricao, valor_parcela1, data_parcela1, status_parcela1, valor_parcela2, data_parcela2, status_parcela2, created_at, clientes(nome)"
       )
-      .order("created_at", { ascending: false })
-      .limit(5),
-    supabase.from("gastos").select("valor"),
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("gastos")
+      .select("id, valor, moeda, tipo, data")
+      .order("data", { ascending: false }),
     fetchArsRate(),
+    fetchUsdRate(),
   ]);
 
-  const pagList = (todosPagamentos ?? []) as TodoPagamento[];
-  const ultimosList = (ultimosPagamentos ?? []) as UltimoPagamento[];
+  const pagList = (pagamentosRaw ?? []) as PagRow[];
+  const gastosList = (gastosRaw ?? []) as GastoRow[];
 
-  function clienteNome(p: UltimoPagamento) {
-    const c = p.clientes;
-    if (!c) return "Cliente";
-    if (Array.isArray(c)) return c[0]?.nome ?? "Cliente";
-    return c.nome;
-  }
+  // Received within period
+  const recebidoBRL = computeRecebido(pagList, "BRL", range);
+  const recebidoARS = computeRecebido(pagList, "ARS", range);
 
-  const totalRecebidoBRL = sumParcelasPago(pagList, "BRL");
-  const totalRecebidoARS = sumParcelasPago(pagList, "ARS");
-  const totalBRL = sumParcelas(pagList, "BRL");
-  const totalARS = sumParcelas(pagList, "ARS");
-  const totalGastos = (gastos ?? []).reduce((sum, g) => sum + Number(g.valor), 0);
-  const saldo = totalRecebidoBRL - totalGastos;
+  // All-time pending (period-independent)
+  const pendenteBRL = computePendente(pagList, "BRL");
+  const pendenteARS = computePendente(pagList, "ARS");
 
-  const pendenteBRL = totalBRL - totalRecebidoBRL;
-  const pendenteARS = totalARS - totalRecebidoARS;
+  // Gastos for period (with recorrente logic)
+  const gastos = computeGastos(gastosList, period, range, usdRate, now);
 
-  const totalConsolidado =
-    arsRate != null ? totalRecebidoBRL + totalRecebidoARS * arsRate : null;
+  // Saldos
+  const saldoBRL = recebidoBRL - gastos.totalBRL;
+  const saldoARS = recebidoARS; // no ARS gastos
+
+  // Consolidado (period-filtered)
+  const consolidadoBRL = arsRate != null
+    ? recebidoBRL + recebidoARS * arsRate
+    : null;
+
+  // Last 5 payments (not period-filtered)
+  const ultimosList = pagList.slice(0, 5);
 
   return (
     <div className="max-w-full overflow-x-hidden">
-      <PageHeader
-        title="Visão geral"
-        description="Resumo financeiro do L2Connect."
-      />
+      {/* ── Header + Period Selector ── */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader
+          title="Visão geral"
+          description={`Período: ${periodLabel}`}
+        />
+        <div className="shrink-0">
+          <PeriodSelector />
+        </div>
+      </div>
 
-      {/* ── Hero: Saldo BRL ── */}
+      {/* ── Hero: 4 valores em 2 colunas ── */}
       <div
         className="mb-6 rounded-xl border p-5 md:p-6"
         style={{
           borderColor: "rgba(255,255,255,0.08)",
-          background: saldo >= 0
-            ? "linear-gradient(135deg, rgba(0,180,255,0.07) 0%, rgba(0,100,200,0.03) 100%)"
-            : "linear-gradient(135deg, rgba(255,77,77,0.07) 0%, rgba(180,0,0,0.03) 100%)",
-          boxShadow: saldo >= 0
-            ? "0 0 40px rgba(0,180,255,0.06), 0 4px 24px rgba(0,0,0,0.3)"
-            : "0 0 40px rgba(255,77,77,0.06), 0 4px 24px rgba(0,0,0,0.3)",
+          background: "linear-gradient(135deg, rgba(0,180,255,0.06) 0%, rgba(0,30,80,0.04) 100%)",
+          boxShadow: "0 0 40px rgba(0,180,255,0.05), 0 4px 24px rgba(0,0,0,0.3)",
         }}
       >
-        <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Saldo BRL — recebido menos gastos
+        <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Resumo Financeiro · {periodLabel}
         </p>
-        <p
-          className="text-4xl font-bold tracking-tight md:text-5xl"
-          style={
-            saldo >= 0
-              ? { color: "#00b4ff", textShadow: "0 0 30px rgba(0,180,255,0.35)" }
-              : { color: "#ff4d4d", textShadow: "0 0 30px rgba(255,77,77,0.3)" }
-          }
-        >
-          {formatCurrency(saldo)}
-        </p>
-        {saldo < 0 ? (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
-            <TrendingDown className="size-3.5" />
-            Saldo negativo — gastos superam recebimentos
-          </p>
-        ) : (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <TrendingUp className="size-3.5 text-primary" />
-            Saldo positivo
-          </p>
-        )}
+
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          {/* Recebido BRL */}
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Recebido BRL</p>
+            <p
+              className="text-2xl font-bold tracking-tight md:text-3xl"
+              style={{ color: "#00b4ff", textShadow: "0 0 20px rgba(0,180,255,0.3)" }}
+            >
+              {formatCurrency(recebidoBRL)}
+            </p>
+          </div>
+
+          {/* Recebido ARS */}
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Recebido ARS</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-400 md:text-3xl">
+              {formatCurrencyARS(recebidoARS)}
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div
+            className="col-span-2"
+            style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
+          />
+
+          {/* Saldo BRL */}
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">
+              Saldo BRL{" "}
+              <span className="text-[10px] opacity-60">(recebido − gastos)</span>
+            </p>
+            <p
+              className="text-2xl font-bold tracking-tight md:text-3xl"
+              style={{
+                color: saldoBRL >= 0 ? "#00b4ff" : "#ff4d4d",
+                textShadow: saldoBRL >= 0
+                  ? "0 0 20px rgba(0,180,255,0.25)"
+                  : "0 0 20px rgba(255,77,77,0.25)",
+              }}
+            >
+              {formatCurrency(saldoBRL)}
+            </p>
+            {saldoBRL < 0 && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-destructive">
+                <TrendingDown className="size-3" /> Déficit no período
+              </p>
+            )}
+          </div>
+
+          {/* Saldo ARS */}
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Saldo ARS</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-400 md:text-3xl">
+              {formatCurrencyARS(saldoARS)}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* ── Totais por moeda ── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        {/* Total BRL */}
-        <Card style={{ borderColor: "rgba(0,180,255,0.2)", background: "rgba(0,180,255,0.04)" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium">Total em Reais</CardDescription>
-            <div
-              className="flex size-8 items-center justify-center rounded-lg"
-              style={{ background: "rgba(0,180,255,0.12)" }}
-            >
-              <TrendingUp className="size-4 text-primary" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <CardTitle className="text-2xl" style={{ color: "#00b4ff" }}>
-              {formatCurrency(totalRecebidoBRL)}
-            </CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Pendente: {formatCurrency(pendenteBRL)}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Total ARS */}
-        <Card style={{ borderColor: "rgba(255,179,0,0.2)", background: "rgba(255,179,0,0.04)" }}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium">Total em Pesos (ARS)</CardDescription>
-            <div
-              className="flex size-8 items-center justify-center rounded-lg"
-              style={{ background: "rgba(255,179,0,0.12)" }}
-            >
-              <DollarSign className="size-4 text-amber-400" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <CardTitle className="text-2xl text-amber-400">
-              {formatCurrencyARS(totalRecebidoARS)}
-            </CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Pendente: {formatCurrencyARS(pendenteARS)}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Consolidado */}
-        <Card style={{ borderColor: "rgba(0,229,160,0.2)", background: "rgba(0,229,160,0.04)" }}>
+      {/* ── Consolidado em BRL ── */}
+      <div className="mb-6">
+        <Card style={{ borderColor: "rgba(0,229,160,0.2)", background: "rgba(0,229,160,0.03)" }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription className="font-medium">Consolidado em BRL</CardDescription>
-            <div
-              className="flex size-8 items-center justify-center rounded-lg"
-              style={{ background: "rgba(0,229,160,0.12)" }}
-            >
-              <ArrowLeftRight className="size-4 text-emerald-400" />
+            <div className="flex items-center gap-2">
+              {arsRate != null && (
+                <span className="text-xs text-muted-foreground">
+                  1 ARS = R$ {arsRate.toFixed(5)}
+                </span>
+              )}
+              <div
+                className="flex size-8 items-center justify-center rounded-lg"
+                style={{ background: "rgba(0,229,160,0.12)" }}
+              >
+                <ArrowLeftRight className="size-4 text-emerald-400" />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            {totalConsolidado != null ? (
+            {consolidadoBRL != null ? (
               <>
                 <CardTitle className="text-2xl text-emerald-400">
-                  {formatCurrency(totalConsolidado)}
+                  {formatCurrency(consolidadoBRL)}
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Câmbio ARS/BRL: {arsRate?.toFixed(4)}
+                  BRL + ARS convertido · {periodLabel}
                 </p>
               </>
             ) : (
               <>
-                <CardTitle className="text-2xl text-muted-foreground">
-                  {formatCurrency(totalBRL)}
+                <CardTitle className="text-2xl" style={{ color: "#00b4ff" }}>
+                  {formatCurrency(recebidoBRL)}
                 </CardTitle>
-                <p className="mt-1 text-xs text-amber-400">Câmbio indisponível</p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <RefreshCcw className="size-3" />
+                  apenas BRL <span className="text-amber-400/80">(conversão parcial)</span>
+                </p>
               </>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Stats: 2×2 mobile / 4 colunas desktop ── */}
+      {/* ── Stats 2×2 / 4col ── */}
       <div className="mb-8 grid grid-cols-2 gap-4 xl:grid-cols-4">
         {/* Clientes */}
         <Card>
@@ -265,7 +435,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Gastos */}
+        {/* Gastos — com breakdown recorrente/avulso */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Gastos</CardDescription>
@@ -278,13 +448,17 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl text-destructive">
-              {formatCurrency(totalGastos)}
+              {formatCurrency(gastos.totalBRL)}
             </CardTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">total registrado</p>
+            <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+              Recorr.: {formatCurrency(gastos.recorrenteBRL)}
+              {" · "}
+              Avulso: {formatCurrency(gastos.avulsoBRL)}
+            </p>
           </CardContent>
         </Card>
 
-        {/* A Receber BRL */}
+        {/* A Receber BRL — sempre all-time */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>A Receber BRL</CardDescription>
@@ -299,11 +473,11 @@ export default async function DashboardPage() {
             <CardTitle className="text-2xl text-amber-400">
               {formatCurrency(pendenteBRL)}
             </CardTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">pendente</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">total pendente</p>
           </CardContent>
         </Card>
 
-        {/* A Receber ARS */}
+        {/* A Receber ARS — sempre all-time */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>A Receber ARS</CardDescription>
@@ -318,18 +492,16 @@ export default async function DashboardPage() {
             <CardTitle className="text-2xl text-amber-400">
               {formatCurrencyARS(pendenteARS)}
             </CardTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">pendente</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">total pendente</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Últimos pagamentos ── */}
+      {/* ── Últimos pagamentos (sem filtro de período) ── */}
       <div>
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">Últimos pagamentos</h2>
-            <p className="text-sm text-muted-foreground">Os 5 registros mais recentes.</p>
-          </div>
+        <div className="mb-4">
+          <h2 className="text-lg font-bold tracking-tight">Últimos pagamentos</h2>
+          <p className="text-sm text-muted-foreground">Os 5 registros mais recentes.</p>
         </div>
 
         {ultimosList.length === 0 ? (
@@ -376,7 +548,6 @@ export default async function DashboardPage() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {/* Moeda tag */}
                     <span
                       className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
                       style={{
@@ -389,9 +560,7 @@ export default async function DashboardPage() {
                     >
                       {p.moeda}
                     </span>
-                    {/* Status badge */}
                     <Badge variant={statusVariant}>{statusLabel}</Badge>
-                    {/* Valor */}
                     <span className="font-bold">
                       {p.moeda === "ARS"
                         ? formatCurrencyARS(total)

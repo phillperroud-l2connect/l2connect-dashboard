@@ -24,10 +24,15 @@ export type Pagamento = {
   clientes?: Pick<Cliente, "nome"> | null;
 };
 
+export type GastoMoeda = "BRL" | "USD";
+export type GastoTipo = "recorrente" | "avulso";
+
 export type Gasto = {
   id: string;
   descricao: string;
   valor: number;
+  moeda: GastoMoeda;
+  tipo: GastoTipo;
   categoria: string | null;
   data: string;
   created_at: string;
