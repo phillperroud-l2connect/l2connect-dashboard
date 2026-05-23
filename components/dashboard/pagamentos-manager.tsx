@@ -59,7 +59,7 @@ function formatValor(valor: number, moeda: Moeda) {
 }
 
 const selectCls =
-  "flex h-9 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm text-foreground";
+  "flex h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all";
 
 export function PagamentosManager() {
   const supabase = createClient();
@@ -233,7 +233,7 @@ export function PagamentosManager() {
                 </div>
 
                 {/* Parcela 1 */}
-                <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                <div className="space-y-3 rounded-lg border p-3" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Parcela 1
                   </p>
@@ -294,7 +294,7 @@ export function PagamentosManager() {
 
                 {/* Parcela 2 */}
                 {form.tem_parcela2 && (
-                  <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <div className="space-y-3 rounded-lg border p-3" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Parcela 2
                     </p>
@@ -374,10 +374,10 @@ export function PagamentosManager() {
       ) : pagamentos.length === 0 ? (
         <EmptyState message="Nenhum pagamento cadastrado." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <table className="w-full min-w-[760px] text-sm">
             <thead>
-              <tr className="border-b bg-muted/30 text-left text-muted-foreground">
+              <tr className="border-b text-left text-muted-foreground" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
                 <th className="px-4 py-3 font-medium">Cliente</th>
                 <th className="px-4 py-3 font-medium">Moeda</th>
                 <th className="px-4 py-3 font-medium">Descrição</th>
@@ -387,11 +387,18 @@ export function PagamentosManager() {
               </tr>
             </thead>
             <tbody>
-              {pagamentos.map((p) => (
-                <tr key={p.id} className="border-b last:border-0 hover:bg-muted/10">
+              {pagamentos.map((p, i) => (
+                <tr key={p.id} className="border-b last:border-0 transition-colors hover:bg-white/3" style={{ borderColor: "rgba(255,255,255,0.06)", background: i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined }}>
                   <td className="px-4 py-3 font-medium">{p.clientes?.nome ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded border border-border/60 px-2 py-0.5 text-xs font-semibold">
+                    <span
+                      className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                      style={{
+                        background: p.moeda === "ARS" ? "rgba(255,179,0,0.15)" : "rgba(0,180,255,0.12)",
+                        color: p.moeda === "ARS" ? "#ffb300" : "#00b4ff",
+                        border: `1px solid ${p.moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
+                      }}
+                    >
                       {p.moeda}
                     </span>
                   </td>

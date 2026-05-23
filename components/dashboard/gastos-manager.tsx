@@ -210,10 +210,10 @@ export function GastosManager() {
       ) : gastos.length === 0 ? (
         <EmptyState message="Nenhum gasto cadastrado." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <table className="w-full min-w-[520px] text-sm">
             <thead>
-              <tr className="border-b bg-muted/30 text-left text-muted-foreground">
+              <tr className="border-b text-left text-muted-foreground" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
                 <th className="px-4 py-3 font-medium">Descrição</th>
                 <th className="px-4 py-3 font-medium">Categoria</th>
                 <th className="px-4 py-3 font-medium">Valor</th>
@@ -222,8 +222,8 @@ export function GastosManager() {
               </tr>
             </thead>
             <tbody>
-              {gastos.map((g) => (
-                <tr key={g.id} className="border-b last:border-0">
+              {gastos.map((g, i) => (
+                <tr key={g.id} className="border-b last:border-0 transition-colors hover:bg-white/3" style={{ borderColor: "rgba(255,255,255,0.06)", background: i % 2 !== 0 ? "rgba(255,255,255,0.015)" : undefined }}>
                   <td className="px-4 py-3 font-medium">{g.descricao}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {g.categoria ?? "—"}

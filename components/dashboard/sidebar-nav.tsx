@@ -14,7 +14,6 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard, exact: true },
@@ -38,19 +37,21 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-sidebar-border px-4 py-4">
+      {/* Logo */}
+      <div className="flex items-center px-5 py-6">
         <Image
           src="/l2connect-logo.png"
           alt="L2Connect"
           width={160}
-          height={40}
-          style={{ height: "40px", width: "auto" }}
+          height={42}
+          style={{ height: "42px", width: "auto" }}
           unoptimized
           priority
         />
       </div>
 
-      <nav className="flex-1 space-y-0.5 p-2 pt-3">
+      {/* Navigation */}
+      <nav className="flex-1 space-y-0.5 px-3 pb-4">
         {navItems.map((item) => {
           const active = item.exact
             ? pathname === item.href
@@ -62,11 +63,16 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150",
                 active
-                  ? "bg-primary/20 text-primary border border-primary/30"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                  ? "border-l-[2px] border-primary bg-primary/10 pl-[10px] text-primary"
+                  : "border-l-[2px] border-transparent text-sidebar-foreground/60 hover:bg-white/5 hover:text-sidebar-foreground"
               )}
+              style={
+                active
+                  ? { filter: "drop-shadow(0 0 8px rgba(0,180,255,0.3))" }
+                  : undefined
+              }
             >
               <Icon className="size-4 shrink-0" />
               {item.label}
@@ -75,16 +81,16 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
-      <div className="border-t border-sidebar-border p-2">
-        <Button
+      {/* Footer / Logout */}
+      <div className="border-t border-sidebar-border p-3">
+        <button
           type="button"
-          variant="ghost"
-          className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-sidebar-foreground"
           onClick={handleLogout}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-sidebar-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
         >
-          <LogOut className="size-4" />
+          <LogOut className="size-4 shrink-0" />
           Sair
-        </Button>
+        </button>
       </div>
     </div>
   );

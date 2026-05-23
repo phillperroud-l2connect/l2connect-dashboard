@@ -6,6 +6,7 @@ import {
   TrendingDown,
   DollarSign,
   ArrowLeftRight,
+  Wallet,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -16,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatCurrencyARS, formatDate } from "@/lib/format";
 
 type TodoPagamento = {
@@ -122,202 +124,286 @@ export default async function DashboardPage() {
     arsRate != null ? totalRecebidoBRL + totalRecebidoARS * arsRate : null;
 
   return (
-    <div>
+    <div className="max-w-full overflow-x-hidden">
       <PageHeader
         title="Visão geral"
         description="Resumo financeiro do L2Connect."
       />
 
-      {/* Saldo BRL */}
-      <div className="mb-6 rounded-xl border bg-card p-4 md:p-6">
-        <p className="text-sm text-muted-foreground">Saldo BRL (recebido − gastos)</p>
+      {/* ── Hero: Saldo BRL ── */}
+      <div
+        className="mb-6 rounded-xl border p-5 md:p-6"
+        style={{
+          borderColor: "rgba(255,255,255,0.08)",
+          background: saldo >= 0
+            ? "linear-gradient(135deg, rgba(0,180,255,0.07) 0%, rgba(0,100,200,0.03) 100%)"
+            : "linear-gradient(135deg, rgba(255,77,77,0.07) 0%, rgba(180,0,0,0.03) 100%)",
+          boxShadow: saldo >= 0
+            ? "0 0 40px rgba(0,180,255,0.06), 0 4px 24px rgba(0,0,0,0.3)"
+            : "0 0 40px rgba(255,77,77,0.06), 0 4px 24px rgba(0,0,0,0.3)",
+        }}
+      >
+        <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Saldo BRL — recebido menos gastos
+        </p>
         <p
-          className={`mt-1 text-3xl font-bold ${saldo >= 0 ? "text-emerald-400" : "text-destructive"}`}
+          className="text-4xl font-bold tracking-tight md:text-5xl"
+          style={
+            saldo >= 0
+              ? { color: "#00b4ff", textShadow: "0 0 30px rgba(0,180,255,0.35)" }
+              : { color: "#ff4d4d", textShadow: "0 0 30px rgba(255,77,77,0.3)" }
+          }
         >
           {formatCurrency(saldo)}
         </p>
         {saldo < 0 ? (
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <TrendingDown className="size-3" /> Saldo negativo
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+            <TrendingDown className="size-3.5" />
+            Saldo negativo — gastos superam recebimentos
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <TrendingUp className="size-3.5 text-primary" />
+            Saldo positivo
+          </p>
+        )}
       </div>
 
-      {/* Totais por moeda */}
+      {/* ── Totais por moeda ── */}
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Card className="border-primary/20 bg-primary/5">
+        {/* Total BRL */}
+        <Card style={{ borderColor: "rgba(0,180,255,0.2)", background: "rgba(0,180,255,0.04)" }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription className="font-medium">Total em Reais</CardDescription>
-            <TrendingUp className="size-4 text-primary" />
+            <div
+              className="flex size-8 items-center justify-center rounded-lg"
+              style={{ background: "rgba(0,180,255,0.12)" }}
+            >
+              <TrendingUp className="size-4 text-primary" />
+            </div>
           </CardHeader>
           <CardContent>
-            <CardTitle className="text-xl text-primary">
+            <CardTitle className="text-2xl" style={{ color: "#00b4ff" }}>
               {formatCurrency(totalRecebidoBRL)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               Pendente: {formatCurrency(pendenteBRL)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-amber-500/20 bg-amber-500/5">
+        {/* Total ARS */}
+        <Card style={{ borderColor: "rgba(255,179,0,0.2)", background: "rgba(255,179,0,0.04)" }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription className="font-medium">Total em Pesos (ARS)</CardDescription>
-            <DollarSign className="size-4 text-amber-400" />
+            <div
+              className="flex size-8 items-center justify-center rounded-lg"
+              style={{ background: "rgba(255,179,0,0.12)" }}
+            >
+              <DollarSign className="size-4 text-amber-400" />
+            </div>
           </CardHeader>
           <CardContent>
-            <CardTitle className="text-xl text-amber-400">
+            <CardTitle className="text-2xl text-amber-400">
               {formatCurrencyARS(totalRecebidoARS)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               Pendente: {formatCurrencyARS(pendenteARS)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-emerald-500/20 bg-emerald-500/5">
+        {/* Consolidado */}
+        <Card style={{ borderColor: "rgba(0,229,160,0.2)", background: "rgba(0,229,160,0.04)" }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription className="font-medium">Consolidado em BRL</CardDescription>
-            <ArrowLeftRight className="size-4 text-emerald-400" />
+            <div
+              className="flex size-8 items-center justify-center rounded-lg"
+              style={{ background: "rgba(0,229,160,0.12)" }}
+            >
+              <ArrowLeftRight className="size-4 text-emerald-400" />
+            </div>
           </CardHeader>
           <CardContent>
             {totalConsolidado != null ? (
               <>
-                <CardTitle className="text-xl text-emerald-400">
+                <CardTitle className="text-2xl text-emerald-400">
                   {formatCurrency(totalConsolidado)}
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Câmbio ARS/BRL: {arsRate?.toFixed(4)}
                 </p>
               </>
             ) : (
               <>
-                <CardTitle className="text-xl text-muted-foreground">
+                <CardTitle className="text-2xl text-muted-foreground">
                   {formatCurrency(totalBRL)}
                 </CardTitle>
-                <p className="text-xs text-amber-400">
-                  Câmbio ARS indisponível
-                </p>
+                <p className="mt-1 text-xs text-amber-400">Câmbio indisponível</p>
               </>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Stats cards */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* ── Stats: 2×2 mobile / 4 colunas desktop ── */}
+      <div className="mb-8 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {/* Clientes */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Clientes</CardDescription>
-            <Users className="size-4 text-muted-foreground" />
+            <div
+              className="flex size-7 items-center justify-center rounded-lg"
+              style={{ background: "rgba(192,96,255,0.12)" }}
+            >
+              <Users className="size-3.5 text-purple-400" />
+            </div>
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl">{clientesCount ?? 0}</CardTitle>
-            <p className="text-xs text-muted-foreground">cadastrados</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">cadastrados</p>
           </CardContent>
         </Card>
 
+        {/* Gastos */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Gastos</CardDescription>
-            <Receipt className="size-4 text-muted-foreground" />
+            <div
+              className="flex size-7 items-center justify-center rounded-lg"
+              style={{ background: "rgba(255,77,77,0.12)" }}
+            >
+              <Receipt className="size-3.5 text-destructive" />
+            </div>
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl text-destructive">
               {formatCurrency(totalGastos)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">total registrado</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">total registrado</p>
           </CardContent>
         </Card>
 
+        {/* A Receber BRL */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>A Receber (BRL)</CardDescription>
-            <CreditCard className="size-4 text-muted-foreground" />
+            <CardDescription>A Receber BRL</CardDescription>
+            <div
+              className="flex size-7 items-center justify-center rounded-lg"
+              style={{ background: "rgba(255,179,0,0.12)" }}
+            >
+              <CreditCard className="size-3.5 text-amber-400" />
+            </div>
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl text-amber-400">
               {formatCurrency(pendenteBRL)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">parcelas pendentes</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">pendente</p>
           </CardContent>
         </Card>
 
+        {/* A Receber ARS */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription>A Receber (ARS)</CardDescription>
-            <CreditCard className="size-4 text-muted-foreground" />
+            <CardDescription>A Receber ARS</CardDescription>
+            <div
+              className="flex size-7 items-center justify-center rounded-lg"
+              style={{ background: "rgba(255,179,0,0.12)" }}
+            >
+              <Wallet className="size-3.5 text-amber-400" />
+            </div>
           </CardHeader>
           <CardContent>
             <CardTitle className="text-2xl text-amber-400">
               {formatCurrencyARS(pendenteARS)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">parcelas pendentes</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">pendente</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Últimos pagamentos */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Últimos pagamentos</CardTitle>
-          <CardDescription>Os 5 registros mais recentes.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {ultimosList.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum pagamento cadastrado.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {ultimosList.map((p) => {
-                const total =
-                  Number(p.valor_parcela1) +
-                  (p.valor_parcela2 ? Number(p.valor_parcela2) : 0);
-                const allPago =
-                  p.status_parcela1 === "pago" &&
-                  (p.valor_parcela2 == null || p.status_parcela2 === "pago");
-                const anyPago =
-                  p.status_parcela1 === "pago" || p.status_parcela2 === "pago";
-                return (
-                  <li
-                    key={p.id}
-                    className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-medium">{clienteNome(p)}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {p.descricao ?? "Sem descrição"} ·{" "}
-                        <span className="rounded border border-border/60 px-1 text-xs">
-                          {p.moeda}
-                        </span>
-                        {" · "}
-                        {formatDate(p.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-xs ${
-                          allPago
-                            ? "text-emerald-400"
-                            : anyPago
-                              ? "text-amber-400"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {allPago ? "pago" : anyPago ? "parcial" : "pendente"}
-                      </span>
-                      <span className="font-semibold">
-                        {p.moeda === "ARS"
-                          ? formatCurrencyARS(total)
-                          : formatCurrency(total)}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {/* ── Últimos pagamentos ── */}
+      <div>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Últimos pagamentos</h2>
+            <p className="text-sm text-muted-foreground">Os 5 registros mais recentes.</p>
+          </div>
+        </div>
+
+        {ultimosList.length === 0 ? (
+          <div
+            className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground"
+            style={{ borderColor: "rgba(255,255,255,0.08)" }}
+          >
+            Nenhum pagamento cadastrado.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {ultimosList.map((p) => {
+              const total =
+                Number(p.valor_parcela1) +
+                (p.valor_parcela2 ? Number(p.valor_parcela2) : 0);
+              const allPago =
+                p.status_parcela1 === "pago" &&
+                (p.valor_parcela2 == null || p.status_parcela2 === "pago");
+              const anyPago =
+                p.status_parcela1 === "pago" || p.status_parcela2 === "pago";
+
+              const statusLabel = allPago ? "pago" : anyPago ? "parcial" : "pendente";
+              const statusVariant = allPago
+                ? ("success" as const)
+                : anyPago
+                  ? ("warning" as const)
+                  : ("destructive" as const);
+
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-col gap-2 rounded-xl border px-4 py-3 transition-colors hover:bg-white/3 sm:flex-row sm:items-center sm:justify-between"
+                  style={{
+                    borderColor: "rgba(255,255,255,0.07)",
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-foreground">
+                      {clienteNome(p)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {p.descricao ?? "Sem descrição"} · {formatDate(p.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* Moeda tag */}
+                    <span
+                      className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                      style={{
+                        background: p.moeda === "ARS"
+                          ? "rgba(255,179,0,0.15)"
+                          : "rgba(0,180,255,0.12)",
+                        color: p.moeda === "ARS" ? "#ffb300" : "#00b4ff",
+                        border: `1px solid ${p.moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
+                      }}
+                    >
+                      {p.moeda}
+                    </span>
+                    {/* Status badge */}
+                    <Badge variant={statusVariant}>{statusLabel}</Badge>
+                    {/* Valor */}
+                    <span className="font-bold">
+                      {p.moeda === "ARS"
+                        ? formatCurrencyARS(total)
+                        : formatCurrency(total)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

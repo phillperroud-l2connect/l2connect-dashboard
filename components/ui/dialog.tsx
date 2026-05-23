@@ -93,7 +93,7 @@ function DialogContent({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
         onClick={() => setOpen(false)}
         aria-hidden
       />
@@ -101,10 +101,12 @@ function DialogContent({
         role="dialog"
         aria-modal
         aria-labelledby={title ? "dialog-title" : undefined}
-        className={cn(
-          "relative z-10 w-full max-w-lg rounded-xl border bg-card p-6 shadow-lg",
-          className
-        )}
+        className={cn("relative z-10 w-full max-w-lg rounded-xl border p-6", className)}
+        style={{
+          background: "#0f0f1c",
+          borderColor: "rgba(255,255,255,0.1)",
+          boxShadow: "0 0 60px rgba(0,0,0,0.6), 0 0 30px rgba(0,180,255,0.05)",
+        }}
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           {title ? (

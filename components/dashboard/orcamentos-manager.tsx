@@ -113,7 +113,7 @@ function fmtUSD(v: number) {
 }
 
 const selectCls =
-  "flex h-9 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm text-foreground";
+  "flex h-9 w-full rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all";
 
 export function OrcamentosManager() {
   const supabase = createClient();
@@ -232,7 +232,7 @@ export function OrcamentosManager() {
         {/* ── Formulário ── */}
         <div className="space-y-5">
           {/* Cliente */}
-          <section className="space-y-3 rounded-xl border bg-card p-4">
+          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
             <h3 className="text-sm font-semibold text-foreground">Dados do Cliente</h3>
 
             <div className="space-y-2">
@@ -288,7 +288,7 @@ export function OrcamentosManager() {
           </section>
 
           {/* Serviços */}
-          <section className="space-y-3 rounded-xl border bg-card p-4">
+          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
             <h3 className="text-sm font-semibold text-foreground">Serviços</h3>
 
             {form.servicos.map((s, i) => (
@@ -336,7 +336,7 @@ export function OrcamentosManager() {
           </section>
 
           {/* Opções */}
-          <section className="space-y-3 rounded-xl border bg-card p-4">
+          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
             <h3 className="text-sm font-semibold text-foreground">Opções</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
