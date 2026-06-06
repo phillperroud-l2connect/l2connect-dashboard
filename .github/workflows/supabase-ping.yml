@@ -12,7 +12,7 @@ jobs:
       - name: Ping Supabase - L2Connect Dashboard
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://kwhgqhbgelmvnmwmgkxg.supabase.co/rest/v1/" \
+            "https://kwhgqhbgelmvnmwmgkxg.supabase.co/auth/v1/health" \
             -H "apikey: sb_publishable_BBwXF2eGAmKvX1HKqiLrcA_Y-ewnp0B" \
             -H "Authorization: Bearer sb_publishable_BBwXF2eGAmKvX1HKqiLrcA_Y-ewnp0B")
           echo "Status HTTP: $response"
