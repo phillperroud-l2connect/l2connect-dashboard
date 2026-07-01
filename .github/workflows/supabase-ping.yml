@@ -9,15 +9,31 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase - L2Connect Dashboard
+      - name: Query Supabase - L2Connect Dashboard
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://kwhgqhbgelmvnmwmgkxg.supabase.co/auth/v1/health" \
-            -H "apikey: sb_publishable_BBwXF2eGAmKvX1HKqiLrcA_Y-ewnp0B" \
-            -H "Authorization: Bearer sb_publishable_BBwXF2eGAmKvX1HKqiLrcA_Y-ewnp0B")
-          echo "Status HTTP: $response"
-          if [ "$response" = "200" ]; then
-            echo "✅ Supabase respondeu com sucesso"
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "❌ Secrets SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY não configurados"
+            exit 1
+          fi
+
+          # SELECT real na tabela pagamentos para registrar atividade no banco
+          response=$(curl -s -w "\n%{http_code}" \
+            "${SUPABASE_URL}/rest/v1/pagamentos?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Status HTTP: $http_code"
+          echo "Resposta: $body"
+
+          if [ "$http_code" = "200" ]; then
+            echo "✅ Query executada com sucesso - atividade registrada no banco"
           else
-            echo "⚠️ Resposta inesperada: $response"
+            echo "⚠️ Resposta inesperada: $http_code"
+            exit 1
           fi
