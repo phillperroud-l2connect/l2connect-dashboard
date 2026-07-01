@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
   CreditCard,
   Receipt,
   FileText,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
+import { createClient } from "@/lib/supabase/client";
 
 const mobileNavItems = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard, exact: true },
@@ -22,6 +24,14 @@ const mobileNavItems = [
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="flex min-h-screen bg-background overflow-x-hidden">
@@ -67,6 +77,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors text-muted-foreground hover:text-destructive"
+        >
+          <LogOut className="size-5 shrink-0" />
+          <span className="leading-none">Sair</span>
+        </button>
       </nav>
     </div>
   );

@@ -22,6 +22,7 @@ export type Pagamento = {
   status_parcela2: ParcelaStatus | null;
   created_at: string;
   clientes?: Pick<Cliente, "nome"> | null;
+  cotacao_ars_brl?: number | null;
 };
 
 export type GastoMoeda = "BRL" | "USD";

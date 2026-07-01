@@ -23,8 +23,10 @@ function Inner() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const period = sp.get("period") ?? "current_month";
-  const year = new Date().getFullYear();
+  const now = new Date();
+  const year = now.getFullYear();
+  const currentMonthValue = `month_${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const period = sp.get("period") ?? currentMonthValue;
 
   function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const params = new URLSearchParams();
@@ -42,8 +44,10 @@ function Inner() {
         onChange={onChange}
         className="h-9 appearance-none rounded-lg border border-white/10 bg-white/5 pl-8 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
       >
-        <option value="current_month">Mês atual</option>
+        <option value={currentMonthValue}>Mês atual</option>
         <option value="last_30_days">Últimos 30 dias</option>
+        <option value="last_3_months">Últimos 3 meses</option>
+        <option value="last_semester">Último semestre</option>
         <option disabled>──────────────</option>
         {MONTHS.map((name, i) => (
           <option key={i} value={`month_${String(i + 1).padStart(2, "0")}`}>

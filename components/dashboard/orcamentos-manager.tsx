@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+type Template = "l2connect" | "zamy" | "l2connect-ar";
 type Idioma = "pt" | "es";
-type MoedaOrc = "BRL" | "ARS";
+type MoedaOrc = "BRL" | "ARS" | "USD";
 
 type ServicoItem = {
   id: string;
@@ -40,6 +41,7 @@ const emptyForm: FormState = {
   nota: "",
 };
 
+// L2Connect — textos bilíngues (inalterado)
 const txt = {
   pt: {
     titulo: "Orçamento",
@@ -83,6 +85,55 @@ const txt = {
   },
 };
 
+// Zamy Design — textos fixos em espanhol
+const zamy = {
+  titulo: "Presupuesto",
+  data: "Fecha",
+  numero: "Nro.",
+  cliente: "Cliente",
+  servicos: "Servicios",
+  servico: "Servicio / Descripción",
+  valor: "Valor",
+  total: "Total",
+  pagamento: "Condiciones de pago",
+  entrada: "50% al inicio",
+  entrega: "50% a la entrega",
+  nota_blue_ars: "* Valor sujeto a la cotización del dólar blue del día.",
+  nota_blue_usd:
+    "* Los valores en dólares se calculan según la cotización del Dólar Blue del día de emisión del presupuesto.",
+  ref_dolar: "Valor de referencia en dólar blue",
+  validade: "Validez",
+  validade_val: "30 días",
+  rodape: "¡Gracias por su preferencia!",
+  rodape_empresa: "Estudio Creativo Zamy Design | www.zamydesign.com",
+};
+
+// L2Connect Argentina — textos fixos em espanhol, cores L2Connect
+const ar = {
+  titulo: "Presupuesto",
+  data: "Fecha",
+  numero: "Nro.",
+  cliente: "Cliente",
+  servicos: "Servicios",
+  servico: "Servicio / Descripción",
+  valor: "Valor",
+  total: "Total",
+  pagamento: "Condiciones de pago",
+  entrada: "50% al inicio",
+  entrega: "50% a la entrega",
+  nota_blue_ars: "* Valor sujeto a la cotización del dólar blue del día.",
+  nota_blue_usd:
+    "* Los valores en dólares se calculan según la cotización del Dólar Blue del día de emisión del presupuesto.",
+  ref_dolar: "Valor de referencia en dólar blue",
+  validade: "Validez",
+  validade_val: "30 días",
+  rodape: "¡Gracias por su preferencia!",
+  rodape_empresa: "L2Connect | www.l2connect.com.br",
+};
+
+const Z = "#C2185B"; // fúcsia Zamy
+const Za = (a: number) => `rgba(194,24,91,${a})`; // fúcsia com alpha
+
 function gerarNumero() {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(2);
@@ -119,6 +170,7 @@ export function OrcamentosManager() {
   const supabase = createClient();
   const previewRef = useRef<HTMLDivElement>(null);
 
+  const [template, setTemplate] = useState<Template>("l2connect");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cotacaoDolar, setCotacaoDolar] = useState<number | null>(null);
@@ -152,6 +204,24 @@ export function OrcamentosManager() {
     setDataHoje(formatDataBR(new Date()));
   }, [loadClientes]);
 
+  function switchTemplate(t: Template) {
+    setTemplate(t);
+    if (t === "l2connect") {
+      setForm((f) => ({
+        ...f,
+        idioma: "pt",
+        moeda: f.moeda === "USD" ? "ARS" : f.moeda,
+      }));
+    } else {
+      // zamy e l2connect-ar: idioma fixo ES, sem BRL
+      setForm((f) => ({
+        ...f,
+        idioma: "es",
+        moeda: f.moeda === "BRL" ? "ARS" : f.moeda,
+      }));
+    }
+  }
+
   function selecionarCliente(id: string) {
     const c = clientes.find((c) => c.id === id);
     setForm((f) => ({
@@ -166,18 +236,12 @@ export function OrcamentosManager() {
   function addServico() {
     setForm((f) => ({
       ...f,
-      servicos: [
-        ...f.servicos,
-        { id: crypto.randomUUID(), descricao: "", valor: "" },
-      ],
+      servicos: [...f.servicos, { id: crypto.randomUUID(), descricao: "", valor: "" }],
     }));
   }
 
   function removeServico(id: string) {
-    setForm((f) => ({
-      ...f,
-      servicos: f.servicos.filter((s) => s.id !== id),
-    }));
+    setForm((f) => ({ ...f, servicos: f.servicos.filter((s) => s.id !== id) }));
   }
 
   function updateServico(id: string, field: "descricao" | "valor", value: string) {
@@ -189,10 +253,23 @@ export function OrcamentosManager() {
 
   const total = form.servicos.reduce((sum, s) => sum + (parseFloat(s.valor) || 0), 0);
   const parcela = total / 2;
-  const totalUSD = cotacaoDolar && total > 0 ? total / cotacaoDolar : null;
+  const totalUSD = cotacaoDolar && total > 0 && form.moeda === "ARS" ? total / cotacaoDolar : null;
   const parcelaUSD = totalUSD ? totalUSD / 2 : null;
 
   const t = txt[form.idioma];
+
+  const fmtValor = (v: number): string => {
+    if (form.moeda === "BRL") return fmtBRL(v);
+    // Zamy e L2Connect AR: símbolo US$ ou $ com 2 casas decimais, sem conversão
+    if (template !== "l2connect") {
+      const n = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(v);
+      return form.moeda === "USD" ? `US$ ${n}` : `$ ${n}`;
+    }
+    return form.moeda === "ARS" ? fmtARS(v) : fmtUSD(v);
+  };
 
   async function gerarPDF() {
     if (!previewRef.current) return;
@@ -210,16 +287,15 @@ export function OrcamentosManager() {
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const imgWidth = 210;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, imgWidth, imgHeight);
-      pdf.save(`orcamento-${form.cliente_nome || "cliente"}-${numero}.pdf`);
+
+      const prefix = template === "l2connect" ? "orcamento" : "presupuesto";
+      pdf.save(`${prefix}-${form.cliente_nome || "cliente"}-${numero}.pdf`);
     } catch (e) {
       console.error(e);
     }
     setGerando(false);
   }
-
-  const fmtValor = (v: number) => (form.moeda === "ARS" ? fmtARS(v) : fmtBRL(v));
 
   return (
     <div>
@@ -228,11 +304,51 @@ export function OrcamentosManager() {
         description="Gere orçamentos profissionais em PDF em português ou espanhol."
       />
 
+      {/* ── Seletor de template ── */}
+      <div className="mb-6 flex gap-2">
+        <button
+          type="button"
+          onClick={() => switchTemplate("l2connect")}
+          className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-all ${
+            template === "l2connect"
+              ? "border-primary bg-primary text-white"
+              : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
+          }`}
+        >
+          L2Connect
+        </button>
+        <button
+          type="button"
+          onClick={() => switchTemplate("l2connect-ar")}
+          className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-all ${
+            template === "l2connect-ar"
+              ? "border-primary bg-primary text-white"
+              : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
+          }`}
+        >
+          L2Connect AR
+        </button>
+        <button
+          type="button"
+          onClick={() => switchTemplate("zamy")}
+          className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-all ${
+            template === "zamy"
+              ? "border-[#C2185B] bg-[#C2185B] text-white"
+              : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10"
+          }`}
+        >
+          Zamy Design
+        </button>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ── Formulário ── */}
         <div className="space-y-5">
           {/* Cliente */}
-          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
+          <section
+            className="space-y-3 rounded-xl border p-4"
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}
+          >
             <h3 className="text-sm font-semibold text-foreground">Dados do Cliente</h3>
 
             <div className="space-y-2">
@@ -267,9 +383,7 @@ export function OrcamentosManager() {
                   id="cli_email"
                   type="email"
                   value={form.cliente_email}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, cliente_email: e.target.value }))
-                  }
+                  onChange={(e) => setForm((f) => ({ ...f, cliente_email: e.target.value }))}
                   placeholder="email@exemplo.com"
                 />
               </div>
@@ -278,9 +392,7 @@ export function OrcamentosManager() {
                 <Input
                   id="cli_tel"
                   value={form.cliente_telefone}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, cliente_telefone: e.target.value }))
-                  }
+                  onChange={(e) => setForm((f) => ({ ...f, cliente_telefone: e.target.value }))}
                   placeholder="+55 11 99999-9999"
                 />
               </div>
@@ -288,7 +400,10 @@ export function OrcamentosManager() {
           </section>
 
           {/* Serviços */}
-          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
+          <section
+            className="space-y-3 rounded-xl border p-4"
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}
+          >
             <h3 className="text-sm font-semibold text-foreground">Serviços</h3>
 
             {form.servicos.map((s, i) => (
@@ -336,23 +451,28 @@ export function OrcamentosManager() {
           </section>
 
           {/* Opções */}
-          <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}>
+          <section
+            className="space-y-3 rounded-xl border p-4"
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#0f0f1c" }}
+          >
             <h3 className="text-sm font-semibold text-foreground">Opções</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Idioma</Label>
-                <select
-                  className={selectCls}
-                  value={form.idioma}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, idioma: e.target.value as Idioma }))
-                  }
-                >
-                  <option value="pt">Português (BR)</option>
-                  <option value="es">Español (AR)</option>
-                </select>
-              </div>
-              <div className="space-y-2">
+              {template === "l2connect" && (
+                <div className="space-y-2">
+                  <Label>Idioma</Label>
+                  <select
+                    className={selectCls}
+                    value={form.idioma}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, idioma: e.target.value as Idioma }))
+                    }
+                  >
+                    <option value="pt">Português (BR)</option>
+                    <option value="es">Español (AR)</option>
+                  </select>
+                </div>
+              )}
+              <div className={template === "zamy" ? "space-y-2 sm:col-span-2" : "space-y-2"}>
                 <Label>Moeda</Label>
                 <select
                   className={selectCls}
@@ -361,8 +481,17 @@ export function OrcamentosManager() {
                     setForm((f) => ({ ...f, moeda: e.target.value as MoedaOrc }))
                   }
                 >
-                  <option value="BRL">Real (R$)</option>
-                  <option value="ARS">Peso Argentino (ARS)</option>
+                  {template === "l2connect" ? (
+                    <>
+                      <option value="BRL">Real (R$)</option>
+                      <option value="ARS">Peso Argentino (ARS)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="ARS">Peso Argentino (ARS)</option>
+                      <option value="USD">Dólar (USD)</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
@@ -432,306 +561,936 @@ export function OrcamentosManager() {
             Prévia do documento — o PDF terá aparência idêntica.
           </p>
 
-          <div
-            ref={previewRef}
-            style={{
-              background: "#ffffff",
-              color: "#111111",
-              fontFamily: "Helvetica Neue, Arial, sans-serif",
-              padding: "40px",
-              minHeight: "297mm",
-              fontSize: "13px",
-              lineHeight: "1.5",
-            }}
-          >
-            {/* Header */}
+          {/* ════ L2CONNECT PREVIEW ════ */}
+          {template === "l2connect" && (
             <div
+              ref={previewRef}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: "32px",
-                paddingBottom: "24px",
-                borderBottom: "2px solid #0066FF",
+                background: "#ffffff",
+                color: "#111111",
+                fontFamily: "Helvetica Neue, Arial, sans-serif",
+                padding: "40px",
+                minHeight: "297mm",
+                fontSize: "13px",
+                lineHeight: "1.5",
               }}
             >
-              <div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/l2connect-logo-dark.png?v=4"
-                  alt="L2Connect"
-                  style={{ height: "56px", width: "auto", display: "block" }}
-                  crossOrigin="anonymous"
-                />
+              {/* Header */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: "32px",
+                  paddingBottom: "24px",
+                  borderBottom: "2px solid #0066FF",
+                }}
+              >
+                <div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/l2connect-logo-dark.png?v=4"
+                    alt="L2Connect"
+                    style={{ height: "56px", width: "auto", display: "block" }}
+                    crossOrigin="anonymous"
+                  />
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontSize: "20px",
+                      fontWeight: "700",
+                      color: "#111",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {t.titulo}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}>
+                    {t.numero} {numero}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {t.data}: {dataHoje}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {t.validade}: {t.validade_val}
+                  </div>
+                </div>
               </div>
-              <div style={{ textAlign: "right" }}>
+
+              {/* Cliente */}
+              <div
+                style={{
+                  marginBottom: "28px",
+                  background: "#f8f9ff",
+                  borderRadius: "8px",
+                  padding: "16px",
+                  borderLeft: "4px solid #0066FF",
+                }}
+              >
+                <div style={{ fontWeight: "700", color: "#0066FF", marginBottom: "8px" }}>
+                  {t.cliente}
+                </div>
+                <div style={{ fontWeight: "600" }}>
+                  {form.cliente_nome || "Nome do Cliente"}
+                </div>
+                {form.cliente_email && (
+                  <div style={{ color: "#555" }}>{form.cliente_email}</div>
+                )}
+                {form.cliente_telefone && (
+                  <div style={{ color: "#555" }}>{form.cliente_telefone}</div>
+                )}
+              </div>
+
+              {/* Serviços */}
+              <div style={{ marginBottom: "28px" }}>
                 <div
                   style={{
-                    fontSize: "20px",
                     fontWeight: "700",
-                    color: "#111",
+                    color: "#0066FF",
+                    marginBottom: "12px",
                     textTransform: "uppercase",
+                    fontSize: "11px",
                     letterSpacing: "1px",
                   }}
                 >
-                  {t.titulo}
+                  {t.servicos}
                 </div>
-                <div style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}>
-                  {t.numero} {numero}
-                </div>
-                <div style={{ color: "#666", fontSize: "12px" }}>
-                  {t.data}: {dataHoje}
-                </div>
-                <div style={{ color: "#666", fontSize: "12px" }}>
-                  {t.validade}: {t.validade_val}
-                </div>
-              </div>
-            </div>
-
-            {/* Cliente */}
-            <div
-              style={{
-                marginBottom: "28px",
-                background: "#f8f9ff",
-                borderRadius: "8px",
-                padding: "16px",
-                borderLeft: "4px solid #0066FF",
-              }}
-            >
-              <div style={{ fontWeight: "700", color: "#0066FF", marginBottom: "8px" }}>
-                {t.cliente}
-              </div>
-              <div style={{ fontWeight: "600" }}>
-                {form.cliente_nome || "Nome do Cliente"}
-              </div>
-              {form.cliente_email && (
-                <div style={{ color: "#555" }}>{form.cliente_email}</div>
-              )}
-              {form.cliente_telefone && (
-                <div style={{ color: "#555" }}>{form.cliente_telefone}</div>
-              )}
-            </div>
-
-            {/* Serviços */}
-            <div style={{ marginBottom: "28px" }}>
-              <div
-                style={{
-                  fontWeight: "700",
-                  color: "#0066FF",
-                  marginBottom: "12px",
-                  textTransform: "uppercase",
-                  fontSize: "11px",
-                  letterSpacing: "1px",
-                }}
-              >
-                {t.servicos}
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr
-                    style={{
-                      background: "#0066FF",
-                      color: "#fff",
-                    }}
-                  >
-                    <th
-                      style={{
-                        padding: "10px 12px",
-                        textAlign: "left",
-                        fontWeight: "600",
-                        fontSize: "12px",
-                      }}
-                    >
-                      {t.servico}
-                    </th>
-                    <th
-                      style={{
-                        padding: "10px 12px",
-                        textAlign: "right",
-                        fontWeight: "600",
-                        fontSize: "12px",
-                        width: "140px",
-                      }}
-                    >
-                      {t.valor}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.servicos
-                    .filter((s) => s.descricao || s.valor)
-                    .map((s, i) => (
-                      <tr
-                        key={s.id}
-                        style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#0066FF", color: "#fff" }}>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                        }}
                       >
-                        <td style={{ padding: "10px 12px", borderBottom: "1px solid #eee" }}>
-                          {s.descricao || `Serviço ${i + 1}`}
-                        </td>
-                        <td
-                          style={{
-                            padding: "10px 12px",
-                            textAlign: "right",
-                            borderBottom: "1px solid #eee",
-                          }}
+                        {t.servico}
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "right",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                          width: "140px",
+                        }}
+                      >
+                        {t.valor}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.servicos
+                      .filter((s) => s.descricao || s.valor)
+                      .map((s, i) => (
+                        <tr
+                          key={s.id}
+                          style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}
                         >
-                          {fmtValor(parseFloat(s.valor) || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ background: "#f0f4ff" }}>
-                    <td
-                      style={{
-                        padding: "12px",
-                        fontWeight: "700",
-                        fontSize: "14px",
-                      }}
-                    >
-                      {t.total}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px",
-                        textAlign: "right",
-                        fontWeight: "800",
-                        fontSize: "16px",
-                        color: "#0066FF",
-                      }}
-                    >
-                      {fmtValor(total)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* Condições de pagamento */}
-            <div
-              style={{
-                marginBottom: "24px",
-                border: "1px solid #dde3ff",
-                borderRadius: "8px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  background: "#f0f4ff",
-                  padding: "10px 16px",
-                  fontWeight: "700",
-                  color: "#0066FF",
-                  fontSize: "12px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                {t.pagamento}
+                          <td
+                            style={{ padding: "10px 12px", borderBottom: "1px solid #eee" }}
+                          >
+                            {s.descricao || `Serviço ${i + 1}`}
+                          </td>
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              textAlign: "right",
+                              borderBottom: "1px solid #eee",
+                            }}
+                          >
+                            {fmtValor(parseFloat(s.valor) || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: "#f0f4ff" }}>
+                      <td
+                        style={{ padding: "12px", fontWeight: "700", fontSize: "14px" }}
+                      >
+                        {t.total}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "800",
+                          fontSize: "16px",
+                          color: "#0066FF",
+                        }}
+                      >
+                        {fmtValor(total)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-              <div style={{ padding: "16px", display: "flex", gap: "16px" }}>
-                <div
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#fff",
-                    border: "1px solid #dde3ff",
-                    borderRadius: "8px",
-                    padding: "16px",
-                  }}
-                >
-                  <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
-                    {t.entrada}
-                  </div>
-                  <div style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}>
-                    {fmtValor(parcela)}
-                  </div>
-                  {form.moeda === "ARS" && parcelaUSD && (
-                    <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
-                      ≈ {fmtUSD(parcelaUSD)}
-                    </div>
-                  )}
-                </div>
-                <div
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#fff",
-                    border: "1px solid #dde3ff",
-                    borderRadius: "8px",
-                    padding: "16px",
-                  }}
-                >
-                  <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
-                    {t.entrega}
-                  </div>
-                  <div style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}>
-                    {fmtValor(parcela)}
-                  </div>
-                  {form.moeda === "ARS" && parcelaUSD && (
-                    <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
-                      ≈ {fmtUSD(parcelaUSD)}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {form.moeda === "ARS" && (
-                <div
-                  style={{
-                    padding: "8px 16px 12px",
-                    fontSize: "11px",
-                    color: "#888",
-                    fontStyle: "italic",
-                    borderTop: "1px solid #eee",
-                  }}
-                >
-                  {cotacaoDolar
-                    ? `${t.ref_dolar}: 1 USD = ${fmtARS(cotacaoDolar)}. `
-                    : ""}
-                  {t.nota_blue}
-                </div>
-              )}
-            </div>
 
-            {/* Nota adicional */}
-            {form.nota && (
+              {/* Condições de pagamento */}
               <div
                 style={{
                   marginBottom: "24px",
-                  padding: "12px 16px",
-                  background: "#fffbf0",
-                  border: "1px solid #ffe080",
+                  border: "1px solid #dde3ff",
                   borderRadius: "8px",
-                  fontSize: "12px",
-                  color: "#555",
+                  overflow: "hidden",
                 }}
               >
-                {form.nota}
+                <div
+                  style={{
+                    background: "#f0f4ff",
+                    padding: "10px 16px",
+                    fontWeight: "700",
+                    color: "#0066FF",
+                    fontSize: "12px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  {t.pagamento}
+                </div>
+                <div style={{ padding: "16px", display: "flex", gap: "16px" }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: "1px solid #dde3ff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {t.entrada}
+                    </div>
+                    <div
+                      style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}
+                    >
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: "1px solid #dde3ff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {t.entrega}
+                    </div>
+                    <div
+                      style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}
+                    >
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {form.moeda === "ARS" && (
+                  <div
+                    style={{
+                      padding: "8px 16px 12px",
+                      fontSize: "11px",
+                      color: "#888",
+                      fontStyle: "italic",
+                      borderTop: "1px solid #eee",
+                    }}
+                  >
+                    {cotacaoDolar
+                      ? `${t.ref_dolar}: 1 USD = ${fmtARS(cotacaoDolar)}. `
+                      : ""}
+                    {t.nota_blue}
+                  </div>
+                )}
               </div>
-            )}
 
-            {/* Rodapé */}
-            <div
-              style={{
-                marginTop: "40px",
-                textAlign: "center",
-                borderTop: "1px solid #eee",
-                paddingTop: "16px",
-              }}
-            >
-              <div style={{ color: "#888", fontSize: "12px" }}>{t.rodape}</div>
+              {/* Nota adicional */}
+              {form.nota && (
+                <div
+                  style={{
+                    marginBottom: "24px",
+                    padding: "12px 16px",
+                    background: "#fffbf0",
+                    border: "1px solid #ffe080",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "#555",
+                  }}
+                >
+                  {form.nota}
+                </div>
+              )}
+
+              {/* Rodapé */}
               <div
                 style={{
-                  marginTop: "6px",
-                  color: "#aaa",
-                  fontSize: "10px",
-                  letterSpacing: "0.3px",
+                  marginTop: "40px",
+                  textAlign: "center",
+                  borderTop: "1px solid #eee",
+                  paddingTop: "16px",
                 }}
               >
-                L2Connect | CNPJ: 65.433.467/0001-70 | www.l2connect.com.br
+                <div style={{ color: "#888", fontSize: "12px" }}>{t.rodape}</div>
+                <div
+                  style={{
+                    marginTop: "6px",
+                    color: "#aaa",
+                    fontSize: "10px",
+                    letterSpacing: "0.3px",
+                  }}
+                >
+                  L2Connect | CNPJ: 65.433.467/0001-70 | www.l2connect.com.br
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* ════ L2CONNECT ARGENTINA PREVIEW ════ */}
+          {template === "l2connect-ar" && (
+            <div
+              ref={previewRef}
+              style={{
+                background: "#ffffff",
+                color: "#111111",
+                fontFamily: "Helvetica Neue, Arial, sans-serif",
+                padding: "40px",
+                minHeight: "297mm",
+                fontSize: "13px",
+                lineHeight: "1.5",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: "32px",
+                  paddingBottom: "24px",
+                  borderBottom: "2px solid #0066FF",
+                }}
+              >
+                <div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/l2connect-logo-dark.png?v=4"
+                    alt="L2Connect"
+                    style={{ height: "56px", width: "auto", display: "block" }}
+                    crossOrigin="anonymous"
+                  />
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontSize: "20px",
+                      fontWeight: "700",
+                      color: "#111",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {ar.titulo}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}>
+                    {ar.numero} {numero}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {ar.data}: {dataHoje}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {ar.validade}: {ar.validade_val}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cliente */}
+              <div
+                style={{
+                  marginBottom: "28px",
+                  background: "#f8f9ff",
+                  borderRadius: "8px",
+                  padding: "16px",
+                  borderLeft: "4px solid #0066FF",
+                }}
+              >
+                <div style={{ fontWeight: "700", color: "#0066FF", marginBottom: "8px" }}>
+                  {ar.cliente}
+                </div>
+                <div style={{ fontWeight: "600" }}>
+                  {form.cliente_nome || "Nombre del Cliente"}
+                </div>
+                {form.cliente_email && (
+                  <div style={{ color: "#555" }}>{form.cliente_email}</div>
+                )}
+                {form.cliente_telefone && (
+                  <div style={{ color: "#555" }}>{form.cliente_telefone}</div>
+                )}
+              </div>
+
+              {/* Servicios */}
+              <div style={{ marginBottom: "28px" }}>
+                <div
+                  style={{
+                    fontWeight: "700",
+                    color: "#0066FF",
+                    marginBottom: "12px",
+                    textTransform: "uppercase",
+                    fontSize: "11px",
+                    letterSpacing: "1px",
+                  }}
+                >
+                  {ar.servicos}
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#0066FF", color: "#fff" }}>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {ar.servico}
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "right",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                          width: "140px",
+                        }}
+                      >
+                        {ar.valor}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.servicos
+                      .filter((s) => s.descricao || s.valor)
+                      .map((s, i) => (
+                        <tr
+                          key={s.id}
+                          style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}
+                        >
+                          <td
+                            style={{ padding: "10px 12px", borderBottom: "1px solid #eee" }}
+                          >
+                            {s.descricao || `Servicio ${i + 1}`}
+                          </td>
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              textAlign: "right",
+                              borderBottom: "1px solid #eee",
+                            }}
+                          >
+                            {fmtValor(parseFloat(s.valor) || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: "#f0f4ff" }}>
+                      <td
+                        style={{ padding: "12px", fontWeight: "700", fontSize: "14px" }}
+                      >
+                        {ar.total}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "800",
+                          fontSize: "16px",
+                          color: "#0066FF",
+                        }}
+                      >
+                        {fmtValor(total)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Condiciones de pago */}
+              <div
+                style={{
+                  marginBottom: "24px",
+                  border: "1px solid #dde3ff",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    background: "#f0f4ff",
+                    padding: "10px 16px",
+                    fontWeight: "700",
+                    color: "#0066FF",
+                    fontSize: "12px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  {ar.pagamento}
+                </div>
+                <div style={{ padding: "16px", display: "flex", gap: "16px" }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: "1px solid #dde3ff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {ar.entrada}
+                    </div>
+                    <div
+                      style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}
+                    >
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: "1px solid #dde3ff",
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {ar.entrega}
+                    </div>
+                    <div
+                      style={{ fontSize: "20px", fontWeight: "800", color: "#0066FF" }}
+                    >
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {form.moeda === "ARS" && (
+                  <div
+                    style={{
+                      padding: "8px 16px 12px",
+                      fontSize: "11px",
+                      color: "#888",
+                      fontStyle: "italic",
+                      borderTop: "1px solid #eee",
+                    }}
+                  >
+                    {cotacaoDolar
+                      ? `${ar.ref_dolar}: 1 USD = ${fmtARS(cotacaoDolar)}. `
+                      : ""}
+                    {ar.nota_blue_ars}
+                  </div>
+                )}
+              </div>
+
+              {/* Nota adicional */}
+              {form.nota && (
+                <div
+                  style={{
+                    marginBottom: "24px",
+                    padding: "12px 16px",
+                    background: "#fffbf0",
+                    border: "1px solid #ffe080",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "#555",
+                  }}
+                >
+                  {form.nota}
+                </div>
+              )}
+
+              {/* Rodapé */}
+              <div
+                style={{
+                  marginTop: "40px",
+                  textAlign: "center",
+                  borderTop: "1px solid #eee",
+                  paddingTop: "16px",
+                }}
+              >
+                <div style={{ color: "#888", fontSize: "12px" }}>{ar.rodape}</div>
+                <div
+                  style={{
+                    marginTop: "6px",
+                    color: "#aaa",
+                    fontSize: "10px",
+                    letterSpacing: "0.3px",
+                  }}
+                >
+                  {ar.rodape_empresa}
+                </div>
+                {form.moeda === "USD" && (
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      color: "#aaa",
+                      fontSize: "10px",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {ar.nota_blue_usd}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ════ ZAMY DESIGN PREVIEW ════ */}
+          {template === "zamy" && (
+            <div
+              ref={previewRef}
+              style={{
+                background: "#ffffff",
+                color: "#111111",
+                fontFamily: "Helvetica Neue, Arial, sans-serif",
+                padding: "40px",
+                minHeight: "297mm",
+                fontSize: "13px",
+                lineHeight: "1.5",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: "32px",
+                  paddingBottom: "24px",
+                  borderBottom: `2px solid ${Z}`,
+                }}
+              >
+                <div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/Logotipo.Zamy.jpeg"
+                    alt="Zamy Design"
+                    style={{ height: "56px", width: "auto", display: "block" }}
+                    crossOrigin="anonymous"
+                  />
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontSize: "20px",
+                      fontWeight: "700",
+                      color: "#111",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {zamy.titulo}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px", marginTop: "4px" }}>
+                    {zamy.numero} {numero}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {zamy.data}: {dataHoje}
+                  </div>
+                  <div style={{ color: "#666", fontSize: "12px" }}>
+                    {zamy.validade}: {zamy.validade_val}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cliente */}
+              <div
+                style={{
+                  marginBottom: "28px",
+                  background: Za(0.06),
+                  borderRadius: "8px",
+                  padding: "16px",
+                  borderLeft: `4px solid ${Z}`,
+                }}
+              >
+                <div style={{ fontWeight: "700", color: Z, marginBottom: "8px" }}>
+                  {zamy.cliente}
+                </div>
+                <div style={{ fontWeight: "600" }}>
+                  {form.cliente_nome || "Nombre del Cliente"}
+                </div>
+                {form.cliente_email && (
+                  <div style={{ color: "#555" }}>{form.cliente_email}</div>
+                )}
+                {form.cliente_telefone && (
+                  <div style={{ color: "#555" }}>{form.cliente_telefone}</div>
+                )}
+              </div>
+
+              {/* Servicios */}
+              <div style={{ marginBottom: "28px" }}>
+                <div
+                  style={{
+                    fontWeight: "700",
+                    color: Z,
+                    marginBottom: "12px",
+                    textTransform: "uppercase",
+                    fontSize: "11px",
+                    letterSpacing: "1px",
+                  }}
+                >
+                  {zamy.servicos}
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: Z, color: "#fff" }}>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {zamy.servico}
+                      </th>
+                      <th
+                        style={{
+                          padding: "10px 12px",
+                          textAlign: "right",
+                          fontWeight: "600",
+                          fontSize: "12px",
+                          width: "140px",
+                        }}
+                      >
+                        {zamy.valor}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.servicos
+                      .filter((s) => s.descricao || s.valor)
+                      .map((s, i) => (
+                        <tr
+                          key={s.id}
+                          style={{ background: i % 2 === 0 ? "#fff" : Za(0.04) }}
+                        >
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              borderBottom: `1px solid ${Za(0.15)}`,
+                            }}
+                          >
+                            {s.descricao || `Servicio ${i + 1}`}
+                          </td>
+                          <td
+                            style={{
+                              padding: "10px 12px",
+                              textAlign: "right",
+                              borderBottom: `1px solid ${Za(0.15)}`,
+                            }}
+                          >
+                            {fmtValor(parseFloat(s.valor) || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: Za(0.08) }}>
+                      <td
+                        style={{
+                          padding: "12px",
+                          fontWeight: "700",
+                          fontSize: "14px",
+                          color: Z,
+                        }}
+                      >
+                        {zamy.total}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "800",
+                          fontSize: "16px",
+                          color: Z,
+                        }}
+                      >
+                        {fmtValor(total)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Condiciones de pago */}
+              <div
+                style={{
+                  marginBottom: "24px",
+                  border: `1px solid ${Za(0.3)}`,
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    background: Za(0.1),
+                    padding: "10px 16px",
+                    fontWeight: "700",
+                    color: Z,
+                    fontSize: "12px",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  {zamy.pagamento}
+                </div>
+                <div style={{ padding: "16px", display: "flex", gap: "16px" }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: `1px solid ${Za(0.25)}`,
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {zamy.entrada}
+                    </div>
+                    <div style={{ fontSize: "20px", fontWeight: "800", color: Z }}>
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#fff",
+                      border: `1px solid ${Za(0.25)}`,
+                      borderRadius: "8px",
+                      padding: "16px",
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>
+                      {zamy.entrega}
+                    </div>
+                    <div style={{ fontSize: "20px", fontWeight: "800", color: Z }}>
+                      {fmtValor(parcela)}
+                    </div>
+                    {form.moeda === "ARS" && parcelaUSD && (
+                      <div style={{ fontSize: "11px", color: "#888", marginTop: "4px" }}>
+                        ≈ {fmtUSD(parcelaUSD)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {form.moeda === "ARS" && (
+                  <div
+                    style={{
+                      padding: "8px 16px 12px",
+                      fontSize: "11px",
+                      color: "#888",
+                      fontStyle: "italic",
+                      borderTop: `1px solid ${Za(0.15)}`,
+                    }}
+                  >
+                    {cotacaoDolar
+                      ? `${zamy.ref_dolar}: 1 USD = ${fmtARS(cotacaoDolar)}. `
+                      : ""}
+                    {zamy.nota_blue_ars}
+                  </div>
+                )}
+              </div>
+
+              {/* Nota adicional */}
+              {form.nota && (
+                <div
+                  style={{
+                    marginBottom: "24px",
+                    padding: "12px 16px",
+                    background: Za(0.05),
+                    border: `1px solid ${Za(0.2)}`,
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "#555",
+                  }}
+                >
+                  {form.nota}
+                </div>
+              )}
+
+              {/* Rodapé */}
+              <div
+                style={{
+                  marginTop: "40px",
+                  textAlign: "center",
+                  borderTop: `1px solid ${Z}`,
+                  paddingTop: "16px",
+                }}
+              >
+                <div style={{ color: "#888", fontSize: "12px" }}>{zamy.rodape}</div>
+                <div
+                  style={{
+                    marginTop: "6px",
+                    color: "#aaa",
+                    fontSize: "10px",
+                    letterSpacing: "0.3px",
+                  }}
+                >
+                  {zamy.rodape_empresa}
+                </div>
+                {form.moeda === "USD" && (
+                  <div
+                    style={{
+                      marginTop: "6px",
+                      color: "#aaa",
+                      fontSize: "10px",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {zamy.nota_blue_usd}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

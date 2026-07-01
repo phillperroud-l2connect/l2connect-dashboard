@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PeriodSelector } from "@/components/dashboard/period-selector";
+import { OverviewChart, type ChartDataPoint } from "@/components/dashboard/overview-chart";
 import { formatCurrency, formatCurrencyARS, formatDate } from "@/lib/format";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -32,12 +33,14 @@ type PagRow = {
   valor_parcela2: number | null;
   data_parcela2: string | null;
   status_parcela2: string | null;
+  cotacao_ars_brl: number | null;
   created_at: string;
   clientes: { nome: string } | { nome: string }[] | null;
 };
 
 type GastoRow = {
   id: string;
+  descricao: string | null;
   valor: number;
   moeda: string | null;
   tipo: string | null;
@@ -51,48 +54,85 @@ const MONTH_NAMES = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
 
-function yyyymmdd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// Build a YYYY-MM-DD string from year + 0-indexed month + day (all UTC-based).
+function ymd(year: number, month0: number, day: number): string {
+  return `${year}-${String(month0 + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Returns the last calendar day of a month using UTC arithmetic.
+function lastDayOfMonth(year: number, month0: number): number {
+  return new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
+}
+
+// Normalize any date string (handles "YYYY-MM-DD" and "YYYY-MM-DDTHH:...") then
+// check whether it falls inside [start, end] (inclusive, both in YYYY-MM-DD).
+function inRange(dateVal: string | null | undefined, start: string, end: string): boolean {
+  if (!dateVal) return false;
+  const d = dateVal.slice(0, 10);
+  return d >= start && d <= end;
 }
 
 function getDateRange(period: string): { start: string; end: string } {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
+  // Use UTC getters so the result is timezone-independent on any server.
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();   // 0-indexed
+  const today = now.getUTCDate();
 
   if (period === "last_30_days") {
-    const end = yyyymmdd(now);
-    const start = yyyymmdd(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
-    return { start, end };
+    const ago = new Date(Date.UTC(year, month, today - 30));
+    return {
+      start: ymd(ago.getUTCFullYear(), ago.getUTCMonth(), ago.getUTCDate()),
+      end: ymd(year, month, today),
+    };
   }
+
+  if (period === "last_3_months") {
+    const s = new Date(Date.UTC(year, month - 2, 1));
+    return {
+      start: ymd(s.getUTCFullYear(), s.getUTCMonth(), 1),
+      end: ymd(year, month, lastDayOfMonth(year, month)),
+    };
+  }
+
+  if (period === "last_semester") {
+    const s = new Date(Date.UTC(year, month - 5, 1));
+    return {
+      start: ymd(s.getUTCFullYear(), s.getUTCMonth(), 1),
+      end: ymd(year, month, lastDayOfMonth(year, month)),
+    };
+  }
+
   if (period === "year") {
     return { start: `${year}-01-01`, end: `${year}-12-31` };
   }
+
   const match = period.match(/^month_(\d{2})$/);
   if (match) {
-    const m = parseInt(match[1]) - 1;
-    const start = new Date(year, m, 1);
-    const end = new Date(year, m + 1, 0);
-    return { start: yyyymmdd(start), end: yyyymmdd(end) };
+    const m = parseInt(match[1]) - 1; // 0-indexed month from URL param
+    return {
+      start: ymd(year, m, 1),
+      end: ymd(year, m, lastDayOfMonth(year, m)),
+    };
   }
+
   // default: current_month
   return {
-    start: yyyymmdd(new Date(year, month, 1)),
-    end: yyyymmdd(new Date(year, month + 1, 0)),
+    start: ymd(year, month, 1),
+    end: ymd(year, month, lastDayOfMonth(year, month)),
   };
 }
 
 function getPeriodLabel(period: string): string {
-  const year = new Date().getFullYear();
+  const now = new Date();
+  const year = now.getUTCFullYear();
   if (period === "last_30_days") return "Últimos 30 dias";
+  if (period === "last_3_months") return "Últimos 3 meses";
+  if (period === "last_semester") return "Último semestre";
   if (period === "year") return `Ano completo ${year}`;
   const match = period.match(/^month_(\d{2})$/);
   if (match) return `${MONTH_NAMES[parseInt(match[1]) - 1]} ${year}`;
-  const m = new Date().getMonth();
-  return `${MONTH_NAMES[m]} ${year}`;
+  return `${MONTH_NAMES[now.getUTCMonth()]} ${year}`;
 }
 
 // ─── Rate fetching ───────────────────────────────────────────────────────────
@@ -135,10 +175,10 @@ function computeRecebido(
   let total = 0;
   for (const p of pagamentos) {
     if (p.moeda !== moeda) continue;
-    if (p.status_parcela1 === "pago" && p.data_parcela1 >= range.start && p.data_parcela1 <= range.end) {
+    if (p.status_parcela1 === "pago" && inRange(p.data_parcela1, range.start, range.end)) {
       total += Number(p.valor_parcela1);
     }
-    if (p.valor_parcela2 != null && p.status_parcela2 === "pago" && p.data_parcela2 && p.data_parcela2 >= range.start && p.data_parcela2 <= range.end) {
+    if (p.valor_parcela2 != null && p.status_parcela2 === "pago" && inRange(p.data_parcela2, range.start, range.end)) {
       total += Number(p.valor_parcela2);
     }
   }
@@ -166,7 +206,8 @@ function countRecurrenteMonths(
   range: { start: string; end: string },
   now: Date
 ): number {
-  if (period === "year") {
+  // Multi-month periods: count how many months in the range the expense was active
+  if (period === "year" || period === "last_3_months" || period === "last_semester") {
     const gastoN = ym2n(gastoData.slice(0, 7));
     const startN = ym2n(range.start.slice(0, 7));
     const endN = ym2n(range.end.slice(0, 7));
@@ -175,7 +216,8 @@ function countRecurrenteMonths(
     const effEnd = Math.min(endN, nowN);
     return effStart <= effEnd ? effEnd - effStart + 1 : 0;
   }
-  return gastoData <= range.end ? 1 : 0;
+  // Single-month or last_30_days: 1 if expense started on or before period end
+  return gastoData.slice(0, 10) <= range.end ? 1 : 0;
 }
 
 type GastosResult = {
@@ -207,7 +249,7 @@ function computeGastos(
       totalBRL += contribution;
       recorrenteBRL += contribution;
     } else {
-      if (g.data >= range.start && g.data <= range.end) {
+      if (inRange(g.data, range.start, range.end)) {
         totalBRL += valorBRL;
         avulsoBRL += valorBRL;
       }
@@ -215,6 +257,77 @@ function computeGastos(
   }
 
   return { totalBRL, recorrenteBRL, avulsoBRL };
+}
+
+// Uses stored per-payment rate (cotacao_ars_brl) when available; falls back to
+// the current live rate so old records without a stored rate still convert.
+function computeConsolidadoBRL(
+  pagamentos: PagRow[],
+  range: { start: string; end: string },
+  currentArsRate: number | null
+): number | null {
+  let total = 0;
+  for (const p of pagamentos) {
+    if (p.moeda === "BRL") {
+      if (p.status_parcela1 === "pago" && inRange(p.data_parcela1, range.start, range.end)) {
+        total += Number(p.valor_parcela1);
+      }
+      if (p.valor_parcela2 != null && p.status_parcela2 === "pago" && inRange(p.data_parcela2, range.start, range.end)) {
+        total += Number(p.valor_parcela2);
+      }
+    } else if (p.moeda === "ARS") {
+      const rate = p.cotacao_ars_brl ?? currentArsRate;
+      if (rate == null) return null;
+      if (p.status_parcela1 === "pago" && inRange(p.data_parcela1, range.start, range.end)) {
+        total += Number(p.valor_parcela1) * rate;
+      }
+      if (p.valor_parcela2 != null && p.status_parcela2 === "pago" && inRange(p.data_parcela2, range.start, range.end)) {
+        total += Number(p.valor_parcela2) * rate;
+      }
+    }
+  }
+  return total;
+}
+
+// ─── Chart helpers ───────────────────────────────────────────────────────────
+
+const MONTH_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+function getChartMonths(range: { start: string; end: string }): Array<{ year: number; month0: number }> {
+  const [sy, sm] = range.start.split("-").map(Number);
+  const [ey, em] = range.end.split("-").map(Number);
+  const months: Array<{ year: number; month0: number }> = [];
+  let y = sy, m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    months.push({ year: y, month0: m - 1 });
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return months;
+}
+
+function buildChartData(
+  pagamentos: PagRow[],
+  gastos: GastoRow[],
+  months: Array<{ year: number; month0: number }>,
+  usdRate: number | null,
+  arsRate: number | null
+): ChartDataPoint[] {
+  return months.map(({ year, month0 }) => {
+    const start = ymd(year, month0, 1);
+    const end = ymd(year, month0, lastDayOfMonth(year, month0));
+    const monthRange = { start, end };
+    const monthPeriod = `month_${String(month0 + 1).padStart(2, "0")}`;
+    const receita =
+      computeConsolidadoBRL(pagamentos, monthRange, arsRate) ??
+      computeRecebido(pagamentos, "BRL", monthRange);
+    const g = computeGastos(gastos, monthPeriod, monthRange, usdRate, new Date(Date.UTC(year, month0, 15)));
+    return {
+      name: MONTH_SHORT[month0],
+      receita: Math.round(receita),
+      gastos: Math.round(g.totalBRL),
+    };
+  });
 }
 
 function clienteNome(p: PagRow): string {
@@ -249,12 +362,12 @@ export default async function DashboardPage({
     supabase
       .from("pagamentos")
       .select(
-        "id, moeda, descricao, valor_parcela1, data_parcela1, status_parcela1, valor_parcela2, data_parcela2, status_parcela2, created_at, clientes(nome)"
+        "id, moeda, descricao, valor_parcela1, data_parcela1, status_parcela1, valor_parcela2, data_parcela2, status_parcela2, cotacao_ars_brl, created_at, clientes(nome)"
       )
       .order("created_at", { ascending: false }),
     supabase
       .from("gastos")
-      .select("id, valor, moeda, tipo, data")
+      .select("id, descricao, valor, moeda, tipo, data")
       .order("data", { ascending: false }),
     fetchArsRate(),
     fetchUsdRate(),
@@ -274,17 +387,21 @@ export default async function DashboardPage({
   // Gastos for period (with recorrente logic)
   const gastos = computeGastos(gastosList, period, range, usdRate, now);
 
-  // Saldos
-  const saldoBRL = recebidoBRL - gastos.totalBRL;
+  // Consolidado uses per-payment stored rate with live rate as fallback
+  const consolidadoBRL = computeConsolidadoBRL(pagList, range, arsRate);
+  const hasStoredRate = pagList.some(p => p.moeda === "ARS" && p.cotacao_ars_brl != null);
+
+  // Saldos — saldoBRL inclui ARS convertida (mesma lógica do card Consolidado)
+  const saldoBRL = (consolidadoBRL ?? recebidoBRL) - gastos.totalBRL;
   const saldoARS = recebidoARS; // no ARS gastos
 
-  // Consolidado (period-filtered)
-  const consolidadoBRL = arsRate != null
-    ? recebidoBRL + recebidoARS * arsRate
-    : null;
-
-  // Last 5 payments (not period-filtered)
+  // Last 5 payments and expenses (not period-filtered)
   const ultimosList = pagList.slice(0, 5);
+  const ultimosGastos = gastosList.slice(0, 5);
+
+  // Chart data — one entry per calendar month in the selected range
+  const chartMonths = getChartMonths(range);
+  const chartData = buildChartData(pagList, gastosList, chartMonths, usdRate, arsRate);
 
   return (
     <div className="max-w-full overflow-x-hidden">
@@ -342,7 +459,7 @@ export default async function DashboardPage({
           <div>
             <p className="mb-1 text-xs text-muted-foreground">
               Saldo BRL{" "}
-              <span className="text-[10px] opacity-60">(recebido − gastos)</span>
+              <span className="text-[10px] opacity-60">(BRL + ARS conv. − gastos)</span>
             </p>
             <p
               className="text-2xl font-bold tracking-tight md:text-3xl"
@@ -398,7 +515,7 @@ export default async function DashboardPage({
                   {formatCurrency(consolidadoBRL)}
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  BRL + ARS convertido · {periodLabel}
+                  BRL + ARS convertido · {hasStoredRate ? "cotação histórica" : "cotação atual"} · {periodLabel}
                 </p>
               </>
             ) : (
@@ -497,81 +614,183 @@ export default async function DashboardPage({
         </Card>
       </div>
 
-      {/* ── Últimos pagamentos (sem filtro de período) ── */}
-      <div>
-        <div className="mb-4">
-          <h2 className="text-lg font-bold tracking-tight">Últimos pagamentos</h2>
-          <p className="text-sm text-muted-foreground">Os 5 registros mais recentes.</p>
+      {/* ── Gráfico Receita vs Gastos ── */}
+      <div className="mb-8">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Receita vs Gastos</h2>
+            <p className="text-sm text-muted-foreground">{periodLabel} · BRL</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block size-2.5 rounded-sm" style={{ background: "#00b4ff" }} />
+              Receita
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block size-2.5 rounded-sm" style={{ background: "#ff4d4d" }} />
+              Gastos
+            </span>
+          </div>
+        </div>
+        <div
+          className="rounded-xl border p-4"
+          style={{
+            borderColor: "rgba(255,255,255,0.08)",
+            background: "rgba(255,255,255,0.015)",
+          }}
+        >
+          <OverviewChart data={chartData} />
+        </div>
+      </div>
+
+      {/* ── Últimos Pagamentos + Últimos Gastos ── */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+        {/* Últimos Pagamentos */}
+        <div>
+          <div className="mb-3">
+            <h2 className="text-base font-bold tracking-tight">Últimos Pagamentos</h2>
+            <p className="text-xs text-muted-foreground">5 registros mais recentes</p>
+          </div>
+          {ultimosList.length === 0 ? (
+            <div
+              className="rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground"
+              style={{ borderColor: "rgba(255,255,255,0.08)" }}
+            >
+              Nenhum pagamento cadastrado.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {ultimosList.map((p) => {
+                const total =
+                  Number(p.valor_parcela1) +
+                  (p.valor_parcela2 ? Number(p.valor_parcela2) : 0);
+                const allPago =
+                  p.status_parcela1 === "pago" &&
+                  (p.valor_parcela2 == null || p.status_parcela2 === "pago");
+                const anyPago =
+                  p.status_parcela1 === "pago" || p.status_parcela2 === "pago";
+                const statusLabel = allPago ? "pago" : anyPago ? "parcial" : "pendente";
+                const statusVariant = allPago
+                  ? ("success" as const)
+                  : anyPago
+                    ? ("warning" as const)
+                    : ("destructive" as const);
+
+                return (
+                  <li
+                    key={p.id}
+                    className="flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 transition-colors hover:bg-white/3 sm:flex-row sm:items-center sm:justify-between"
+                    style={{
+                      borderColor: "rgba(255,255,255,0.07)",
+                      background: "rgba(255,255,255,0.02)",
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {clienteNome(p)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {p.descricao ?? "Sem descrição"} · {formatDate(p.data_parcela1)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                        style={{
+                          background: p.moeda === "ARS"
+                            ? "rgba(255,179,0,0.15)"
+                            : "rgba(0,180,255,0.12)",
+                          color: p.moeda === "ARS" ? "#ffb300" : "#00b4ff",
+                          border: `1px solid ${p.moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
+                        }}
+                      >
+                        {p.moeda}
+                      </span>
+                      <Badge variant={statusVariant}>{statusLabel}</Badge>
+                      <span className="text-sm font-bold">
+                        {p.moeda === "ARS"
+                          ? formatCurrencyARS(total)
+                          : formatCurrency(total)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
 
-        {ultimosList.length === 0 ? (
-          <div
-            className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground"
-            style={{ borderColor: "rgba(255,255,255,0.08)" }}
-          >
-            Nenhum pagamento cadastrado.
+        {/* Últimos Gastos */}
+        <div>
+          <div className="mb-3">
+            <h2 className="text-base font-bold tracking-tight">Últimos Gastos</h2>
+            <p className="text-xs text-muted-foreground">5 registros mais recentes</p>
           </div>
-        ) : (
-          <ul className="space-y-2">
-            {ultimosList.map((p) => {
-              const total =
-                Number(p.valor_parcela1) +
-                (p.valor_parcela2 ? Number(p.valor_parcela2) : 0);
-              const allPago =
-                p.status_parcela1 === "pago" &&
-                (p.valor_parcela2 == null || p.status_parcela2 === "pago");
-              const anyPago =
-                p.status_parcela1 === "pago" || p.status_parcela2 === "pago";
+          {ultimosGastos.length === 0 ? (
+            <div
+              className="rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground"
+              style={{ borderColor: "rgba(255,255,255,0.08)" }}
+            >
+              Nenhum gasto cadastrado.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {ultimosGastos.map((g) => {
+                const moeda = g.moeda ?? "BRL";
+                const tipo = g.tipo ?? "recorrente";
+                return (
+                  <li
+                    key={g.id}
+                    className="flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 transition-colors hover:bg-white/3 sm:flex-row sm:items-center sm:justify-between"
+                    style={{
+                      borderColor: "rgba(255,255,255,0.07)",
+                      background: "rgba(255,255,255,0.02)",
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {g.descricao ?? (tipo === "recorrente" ? "Recorrente" : "Avulso")}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {tipo === "recorrente" ? "Recorrente" : "Avulso"} · {formatDate(g.data)}
+                        {tipo === "recorrente" && (
+                          <span className="ml-1 opacity-60">↻</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                        style={
+                          tipo === "recorrente"
+                            ? {
+                                background: "rgba(0,180,255,0.12)",
+                                color: "#00b4ff",
+                                border: "1px solid rgba(0,180,255,0.2)",
+                              }
+                            : {
+                                background: "rgba(255,255,255,0.07)",
+                                color: "#8899bb",
+                                border: "1px solid rgba(255,255,255,0.12)",
+                              }
+                        }
+                      >
+                        {moeda}
+                      </span>
+                      <span className="text-sm font-bold text-destructive">
+                        −{moeda === "USD"
+                          ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(g.valor)
+                          : formatCurrency(g.valor)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
 
-              const statusLabel = allPago ? "pago" : anyPago ? "parcial" : "pendente";
-              const statusVariant = allPago
-                ? ("success" as const)
-                : anyPago
-                  ? ("warning" as const)
-                  : ("destructive" as const);
-
-              return (
-                <li
-                  key={p.id}
-                  className="flex flex-col gap-2 rounded-xl border px-4 py-3 transition-colors hover:bg-white/3 sm:flex-row sm:items-center sm:justify-between"
-                  style={{
-                    borderColor: "rgba(255,255,255,0.07)",
-                    background: "rgba(255,255,255,0.02)",
-                  }}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-foreground">
-                      {clienteNome(p)}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {p.descricao ?? "Sem descrição"} · {formatDate(p.created_at)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      className="rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                      style={{
-                        background: p.moeda === "ARS"
-                          ? "rgba(255,179,0,0.15)"
-                          : "rgba(0,180,255,0.12)",
-                        color: p.moeda === "ARS" ? "#ffb300" : "#00b4ff",
-                        border: `1px solid ${p.moeda === "ARS" ? "rgba(255,179,0,0.25)" : "rgba(0,180,255,0.2)"}`,
-                      }}
-                    >
-                      {p.moeda}
-                    </span>
-                    <Badge variant={statusVariant}>{statusLabel}</Badge>
-                    <span className="font-bold">
-                      {p.moeda === "ARS"
-                        ? formatCurrencyARS(total)
-                        : formatCurrency(total)}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </div>
     </div>
   );

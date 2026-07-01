@@ -20,6 +20,18 @@ import {
 
 type PagamentoRow = Pagamento & { clientes: { nome: string } | null };
 
+async function fetchArsRateBRL(): Promise<number | null> {
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/ARS", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rate = Number(data?.rates?.BRL);
+    return isNaN(rate) || rate === 0 ? null : rate;
+  } catch {
+    return null;
+  }
+}
+
 type FormState = {
   cliente_id: string;
   descricao: string;
@@ -138,6 +150,16 @@ export function PagamentosManager() {
 
     const parse = (v: string) => parseFloat(v.replace(",", ".")) || 0;
 
+    // For ARS payments: preserve stored rate if already set, fetch live rate otherwise
+    let cotacao_ars_brl: number | null = null;
+    if (form.moeda === "ARS") {
+      if (editing && editing.cotacao_ars_brl != null) {
+        cotacao_ars_brl = editing.cotacao_ars_brl;
+      } else {
+        cotacao_ars_brl = await fetchArsRateBRL();
+      }
+    }
+
     const payload = {
       cliente_id: form.cliente_id,
       descricao: form.descricao.trim() || null,
@@ -148,6 +170,7 @@ export function PagamentosManager() {
       valor_parcela2: form.tem_parcela2 ? parse(form.valor_parcela2) : null,
       data_parcela2: form.tem_parcela2 && form.data_parcela2 ? form.data_parcela2 : null,
       status_parcela2: form.tem_parcela2 ? form.status_parcela2 : null,
+      cotacao_ars_brl,
     };
 
     let mutationError: string | null = null;
