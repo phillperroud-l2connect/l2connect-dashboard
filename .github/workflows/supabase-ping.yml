@@ -14,26 +14,58 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          # Remove espaços, tabs e quebras de linha acidentais dos secrets
+          SUPABASE_URL=$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]')
+          SUPABASE_SERVICE_ROLE_KEY=$(printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | tr -d '[:space:]')
+          # Remove barra final da URL para evitar // no caminho
+          SUPABASE_URL="${SUPABASE_URL%/}"
+
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "❌ Secrets SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY não configurados"
             exit 1
           fi
 
-          # SELECT real na tabela pagamentos para registrar atividade no banco
-          response=$(curl -s -w "\n%{http_code}" \
+          echo "URL alvo: ${SUPABASE_URL}/rest/v1/pagamentos?select=id&limit=1"
+
+          # SELECT real na tabela pagamentos para registrar atividade no banco.
+          # Corpo e status HTTP em variáveis separadas; captura também o exit code do curl.
+          # if() evita que 'set -e' aborte o step antes de capturarmos o exit code
+          if body=$(curl -sS -w "\n%{http_code}" \
             "${SUPABASE_URL}/rest/v1/pagamentos?select=id&limit=1" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}")
-
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-
-          echo "Status HTTP: $http_code"
-          echo "Resposta: $body"
-
-          if [ "$http_code" = "200" ]; then
-            echo "✅ Query executada com sucesso - atividade registrada no banco"
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"); then
+            curl_exit=0
           else
-            echo "⚠️ Resposta inesperada: $http_code"
+            curl_exit=$?
+          fi
+
+          http_code=$(printf '%s' "$body" | tail -n1)
+          response_body=$(printf '%s' "$body" | sed '$d')
+
+          echo "Exit code do curl: $curl_exit"
+          echo "Status HTTP: $http_code"
+          echo "Resposta: $response_body"
+
+          if [ "$curl_exit" -ne 0 ]; then
+            echo "❌ curl falhou (exit $curl_exit) - verifique se SUPABASE_URL é válida"
             exit 1
           fi
+
+          # PostgREST retorna 200 (ou 206 em respostas parciais) para SELECT bem-sucedido
+          case "$http_code" in
+            200|206)
+              echo "✅ Query executada com sucesso - atividade registrada no banco"
+              ;;
+            401|403)
+              echo "❌ Autenticação falhou ($http_code) - confira SUPABASE_SERVICE_ROLE_KEY (use a service_role key, não a anon/publishable)"
+              exit 1
+              ;;
+            404)
+              echo "❌ Recurso não encontrado ($http_code) - confira SUPABASE_URL e o nome da tabela 'pagamentos'"
+              exit 1
+              ;;
+            *)
+              echo "⚠️ Resposta inesperada: $http_code"
+              exit 1
+              ;;
+          esac
